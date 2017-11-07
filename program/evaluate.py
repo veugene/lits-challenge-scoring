@@ -13,12 +13,13 @@ from helpers.calc_metric import (dice,
                                  compute_segmentation_scores,
                                  compute_tumor_burden,
                                  LARGE)
+from helpers.binary_morphology import binary_dilation
 from helpers.utils import time_elapsed
 
 
 # Check input directories.
-submit_dir = os.path.join(sys.argv[1], 'res')
-truth_dir = os.path.join(sys.argv[1], 'ref')
+truth_dir = os.path.join(sys.argv[1])
+submit_dir = os.path.join(sys.argv[2])
 if not os.path.isdir(submit_dir):
     print("submit_dir {} doesn't exist".format(submit_dir))
     sys.exit()
@@ -27,7 +28,7 @@ if not os.path.isdir(truth_dir):
     sys.exit()
 
 # Create output directory.
-output_dir = sys.argv[2]
+output_dir = sys.argv[3]
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
     
@@ -38,26 +39,34 @@ if not os.path.exists(output_dir):
 # meaningless when any one of the masks is empty. Assign maximum (infinite)
 # penalty. The average score for these metrics, over all objects, will thus
 # also not be finite as it also loses meaning.
-segmentation_metrics = {'dice': 0,
-                        'jaccard': 0,
-                        'voe': 1,
-                        'rvd': LARGE,
-                        'assd': LARGE,
-                        'rmsd': LARGE,
-                        'msd': LARGE}
+segmentation_metrics = {'dice': [0],
+                        'jaccard': [0],
+                        'voe': [1],
+                        'rvd': [LARGE],
+                        'assd': [LARGE],
+                        'rmsd': [LARGE],
+                        'msd': [LARGE]}
 
 # Initialize results dictionaries
-lesion_detection_stats = {0:   {'TP': 0, 'FP': 0, 'FN': 0},
-                          0.5: {'TP': 0, 'FP': 0, 'FN': 0}}
+lesion_detection_stats = {0:   {'TP': [], 'FP': [], 'FN': []},
+                          0.5: {'TP': [], 'FP': [], 'FN': []}}
+split_merge_errors = {0:   {'merge': [], 'split': []},
+                      0.5: {'merge': [], 'split': []}}
+detection_status = {0: [], 0.5: []}
 lesion_segmentation_scores = {}
 liver_segmentation_scores = {}
 dice_per_case = {'lesion': [], 'liver': []}
 dice_global_x = {'lesion': {'I': 0, 'S': 0},
                  'liver':  {'I': 0, 'S': 0}} # 2*I/S
 tumor_burden_list = []
+volume_id_list = []
+lesion_sizes = {'reference': [], 'prediction': []}
 
-# Iterate over all volumes in the reference list.
-reference_volume_list = sorted(glob.glob(truth_dir+'/*.nii'))
+               
+"""
+Iterate over all volumes in the reference list, computing metrics.
+"""
+reference_volume_list = sorted(glob.glob(truth_dir+'/*.nii.gz'))
 for reference_volume_fn in reference_volume_list:
     print("Starting with volume {}".format(reference_volume_fn))
     submission_volume_path = os.path.join(submit_dir,
@@ -66,7 +75,9 @@ for reference_volume_fn in reference_volume_list:
         raise ValueError("Submission volume not found - terminating!\n"
                          "Missing volume: {}".format(submission_volume_path))
     print("Found corresponding submission file {} for reference file {}"
-          "".format(reference_volume_fn, submission_volume_path))
+          "".format(submission_volume_path, reference_volume_fn))
+    volume_id = os.path.basename(reference_volume_fn)[:-len(".nii.gz")]
+    volume_id_list.append(volume_id)
     t = time_elapsed()
 
     # Load reference and submission volumes with Nibabel.
@@ -90,31 +101,47 @@ for reference_volume_fn in reference_volume_list:
     
     # Create lesion and liver masks with labeled connected components.
     # (Assuming there is always exactly one liver - one connected comp.)
-    pred_mask_lesion, num_predicted = label_connected_components( \
+    pred_mask_lesion, n_predicted = label_connected_components( \
                                          submission_volume==2, output=np.int16)
-    true_mask_lesion, num_reference = label_connected_components( \
+    true_mask_lesion, n_reference = label_connected_components( \
                                          reference_volume==2, output=np.int16)
     pred_mask_liver = submission_volume>=1
     true_mask_liver = reference_volume>=1
-    liver_prediction_exists = np.any(submission_volume==1)
+    liver_exists = np.any(submission_volume==1) and np.any(reference_volume==1)
     print("Done finding connected components ({:.2f} seconds)".format(t()))
+    
+    # Compute lesion volume.
+    volume_ref = np.product(voxel_spacing)*np.count_nonzero(true_mask_lesion)
+    volume_pre = np.product(voxel_spacing)*np.count_nonzero(pred_mask_lesion)
+    lesion_sizes['reference'].append(volume_ref)
+    lesion_sizes['prediction'].append(volume_pre)
     
     # Identify detected lesions.
     # Retain detected_mask_lesion for overlap > 0.5
     for overlap in [0, 0.5]:
-        detected_mask_lesion, mod_ref_mask, num_detected = detect_lesions( \
-                                              prediction_mask=pred_mask_lesion,
-                                              reference_mask=true_mask_lesion,
-                                              min_overlap=overlap)
+        detection_out = detect_lesions(prediction_mask=pred_mask_lesion,
+                                       reference_mask=true_mask_lesion,
+                                       min_overlap=overlap)
+        detected_mask_lesion, mod_ref_mask, \
+        n_detected, n_merge_errors, n_split_errors, \
+        g_id_detected = detection_out
         
         # Count true/false positive and false negative detections.
-        lesion_detection_stats[overlap]['TP']+=num_detected
-        lesion_detection_stats[overlap]['FP']+=num_predicted-num_detected
-        lesion_detection_stats[overlap]['FN']+=num_reference-num_detected
+        lesion_detection_stats[overlap]['TP'].append(n_detected)
+        lesion_detection_stats[overlap]['FP'].append(n_predicted-n_detected)
+        lesion_detection_stats[overlap]['FN'].append(n_reference-n_detected)
+        
+        # Count merge and split errors.
+        split_merge_errors[overlap]['merge'].append(n_merge_errors)
+        split_merge_errors[overlap]['split'].append(n_split_errors)
+        
+        # Note which reference lesions were detected and which were not.
+        detection_status[overlap].append(g_id_detected)
+        
     print("Done identifying detected lesions ({:.2f} seconds)".format(t()))
     
     # Compute segmentation scores for DETECTED lesions.
-    if num_detected>0:
+    if n_detected>0:
         lesion_scores = compute_segmentation_scores( \
                                           prediction_mask=detected_mask_lesion,
                                           reference_mask=mod_ref_mask,
@@ -122,13 +149,13 @@ for reference_volume_fn in reference_volume_list:
         for metric in segmentation_metrics:
             if metric not in lesion_segmentation_scores:
                 lesion_segmentation_scores[metric] = []
-            lesion_segmentation_scores[metric].extend(lesion_scores[metric])
+            lesion_segmentation_scores[metric].append(lesion_scores[metric])
         print("Done computing lesion scores ({:.2f} seconds)".format(t()))
     else:
         print("No lesions detected, skipping lesion score evaluation")
     
     # Compute liver segmentation scores. 
-    if liver_prediction_exists:
+    if liver_exists:
         liver_scores = compute_segmentation_scores( \
                                           prediction_mask=pred_mask_liver,
                                           reference_mask=true_mask_liver,
@@ -136,7 +163,7 @@ for reference_volume_fn in reference_volume_list:
         for metric in segmentation_metrics:
             if metric not in liver_segmentation_scores:
                 liver_segmentation_scores[metric] = []
-            liver_segmentation_scores[metric].extend(liver_scores[metric])
+            liver_segmentation_scores[metric].append(liver_scores[metric])
         print("Done computing liver scores ({:.2f} seconds)".format(t()))
     else:
         # No liver label. Record default score values (zeros, inf).
@@ -155,7 +182,7 @@ for reference_volume_fn in reference_volume_list:
     else:
         dice_per_case['lesion'].append(dice(pred_mask_lesion,
                                             true_mask_lesion))
-    if liver_prediction_exists:
+    if liver_exists:
         dice_per_case['liver'].append(dice(pred_mask_liver,
                                            true_mask_liver))
     else:
@@ -166,7 +193,7 @@ for reference_volume_fn in reference_volume_list:
         np.logical_and(pred_mask_lesion, true_mask_lesion))
     dice_global_x['lesion']['S'] += np.count_nonzero(pred_mask_lesion) + \
                                     np.count_nonzero(true_mask_lesion)
-    if liver_prediction_exists:
+    if liver_exists:
         dice_global_x['liver']['I'] += np.count_nonzero( \
             np.logical_and(pred_mask_liver, true_mask_liver))
         dice_global_x['liver']['S'] += np.count_nonzero(pred_mask_liver) + \
@@ -188,26 +215,34 @@ for reference_volume_fn in reference_volume_list:
     print("Done processing volume (total time: {:.2f} seconds)"
           "".format(t.total_elapsed()))
     gc.collect()
-        
-        
+    
+    
+"""
+Compute and record global metrics given recorded metrics info.
+"""
 # Compute lesion detection metrics.
-_det = {}
+lesion_detection_metrics = {}
 for overlap in [0, 0.5]:
-    TP = lesion_detection_stats[overlap]['TP']
-    FP = lesion_detection_stats[overlap]['FP']
-    FN = lesion_detection_stats[overlap]['FN']
+    TP = np.sum(lesion_detection_stats[overlap]['TP'])
+    FP = np.sum(lesion_detection_stats[overlap]['FP'])
+    FN = np.sum(lesion_detection_stats[overlap]['FN'])
     precision = float(TP)/(TP+FP) if TP+FP else 0
     recall = float(TP)/(TP+FN) if TP+FN else 0
-    _det[overlap] = {'p': precision, 'r': recall}
-lesion_detection_metrics = {'precision': _det[0.5]['p'],
-                            'recall': _det[0.5]['r'],
-                            'precision_greater_zero': _det[0]['p'],
-                            'recall_greater_zero': _det[0]['r']}
+    n_merge_err = np.sum(split_merge_errors[overlap]['merge'])
+    n_split_err = np.sum(split_merge_errors[overlap]['split'])
+    lesion_detection_metrics['precision_'+str(overlap)] = precision
+    lesion_detection_metrics['recall_'+str(overlap)] = recall
+    lesion_detection_metrics['TP_'+str(overlap)] = TP
+    lesion_detection_metrics['FP_'+str(overlap)] = FP
+    lesion_detection_metrics['FN_'+str(overlap)] = FN
+    lesion_detection_metrics['num_merge_errors_'+str(overlap)] = n_merge_err
+    lesion_detection_metrics['num_split_errors_'+str(overlap)] = n_split_err
 
 # Compute lesion segmentation metrics.
 lesion_segmentation_metrics = {}
 for m in lesion_segmentation_scores:
-    lesion_segmentation_metrics[m] = np.mean(lesion_segmentation_scores[m])
+    scores = sum(lesion_segmentation_scores[m], [])     # flatten lists
+    lesion_segmentation_metrics[m] = np.mean(scores)
 if len(lesion_segmentation_scores)==0:
     # Nothing detected - set default values.
     lesion_segmentation_metrics.update(segmentation_metrics)
@@ -218,7 +253,8 @@ lesion_segmentation_metrics['dice_global'] = dice_global
 # Compute liver segmentation metrics.
 liver_segmentation_metrics = {}
 for m in liver_segmentation_scores:
-    liver_segmentation_metrics[m] = np.mean(liver_segmentation_scores[m])
+    scores = sum(liver_segmentation_scores[m], [])     # flatten lists
+    liver_segmentation_metrics[m] = np.mean(scores)
 if len(liver_segmentation_scores)==0:
     # Nothing detected - set default values.
     liver_segmentation_metrics.update(segmentation_metrics)
@@ -245,8 +281,11 @@ print("Computed TUMOR BURDEN: \n"
     "rmse: {:.3f}\nmax: {:.3f}".format(tumor_burden_rmse, tumor_burden_max))
 
 # Write metrics to file.
-output_filename = os.path.join(output_dir, 'scores.txt')
-output_file = open(output_filename, 'w')
+output_filename = os.path.join(output_dir, 'scores_global.txt')
+try:
+    output_file = open(output_filename, 'w')
+except:
+    raise IOError("Failed to open file {}".format(output_filename))
 for metric, value in lesion_detection_metrics.items():
     output_file.write("lesion_{}: {:.3f}\n".format(metric, float(value)))
 for metric, value in lesion_segmentation_metrics.items():
@@ -254,8 +293,62 @@ for metric, value in lesion_segmentation_metrics.items():
 for metric, value in liver_segmentation_metrics.items():
     output_file.write("liver_{}: {:.3f}\n".format(metric, float(value)))
 
-#Tumorburden
+# Tumor burden
 output_file.write("RMSE_Tumorburden: {:.3f}\n".format(tumor_burden_rmse))
 output_file.write("MAXERROR_Tumorburden: {:.3f}\n".format(tumor_burden_max))
 
 output_file.close()
+
+
+"""
+For each metric, record per case (and per lesion, if applicable) score.
+"""
+def record_metric(score_list, metric_name):
+    output_filename = os.path.join(output_dir,
+                                   'scores_{}.txt'.format(metric_name))
+    try:
+        output_file = open(output_filename, 'w')
+    except:
+        raise IOError("Failed to open file {}".format(output_filename))
+    for i in range(len(score_list)):
+        if hasattr(score_list[i], '__len__'):
+            out_line = ",".join([str(s) for s in score_list[i]])
+        else:
+            out_line = str(score_list[i])
+        out_line = "{},{}\n".format(str(volume_id_list[i]), out_line)
+        output_file.write(out_line)
+    output_file.close()
+    
+for overlap in [0, 0.5]:
+    for metric in lesion_detection_stats[overlap]:
+        record_metric(score_list=lesion_detection_stats[overlap][metric],
+                      metric_name='{}_{}'.format(metric, overlap))
+    record_metric(score_list=split_merge_errors[overlap]['merge'],
+                  metric_name='num_merge_errors_'+str(overlap))
+    record_metric(score_list=split_merge_errors[overlap]['split'],
+                  metric_name='num_split_errors_'+str(overlap))
+    detected = []
+    for d in detection_status[overlap]:
+        _detected = []
+        for key in sorted(d.keys()):
+            assert(key in range(1, len(d)+1))
+            _detected.append(d[key])
+        detected.append(_detected)
+    record_metric(score_list=detected,
+                  metric_name='ref_detection_status_'+str(overlap))
+        
+for metric in lesion_segmentation_scores:
+    record_metric(score_list=lesion_segmentation_scores[metric],
+                  metric_name='lesion_{}'.format(metric))
+for metric in lesion_segmentation_scores:
+    record_metric(score_list=liver_segmentation_scores[metric],
+                  metric_name='liver_{}'.format(metric))
+record_metric(score_list=dice_per_case['lesion'],
+              metric_name='lesion_dice_per_case')
+record_metric(score_list=dice_per_case['liver'],
+              metric_name='liver_dice_per_case')
+record_metric(score_list=tumor_burden_list, metric_name='tumor_burden')
+record_metric(score_list=lesion_sizes['reference'],
+              metric_name='lesion_volume_reference')
+record_metric(score_list=lesion_sizes['prediction'],
+              metric_name='lesion_volume_prediction')
