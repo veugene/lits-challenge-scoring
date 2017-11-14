@@ -101,10 +101,19 @@ for reference_volume_fn in reference_volume_list:
     
     # Create lesion and liver masks with labeled connected components.
     # (Assuming there is always exactly one liver - one connected comp.)
+    #
+    # Dilate the reference lesion mask in the axial plane by 1 before
+    # finding connected components in order to get rid of spurious extra
+    # "lesions" that are just artefacts or noise about a reference lesion.
     pred_mask_lesion, n_predicted = label_connected_components( \
                                          submission_volume==2, output=np.int16)
+    dilated_reference_volume = binary_dilation(reference_volume==2,
+                                               spacing=[1,1,0],
+                                               radius=1,
+                                               flat_struct=True)
     true_mask_lesion, n_reference = label_connected_components( \
-                                         reference_volume==2, output=np.int16)
+                                     dilated_reference_volume, output=np.int16)
+    true_mask_lesion[reference_volume!=2] = 0   # Trim the dilation away.
     pred_mask_liver = submission_volume>=1
     true_mask_liver = reference_volume>=1
     liver_exists = np.any(submission_volume==1) and np.any(reference_volume==1)
