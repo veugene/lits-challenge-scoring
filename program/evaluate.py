@@ -33,6 +33,13 @@ output_dir = sys.argv[3]
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
     
+# Set overlap argument.
+overlap = 0.
+if len(sys.argv) > 4:
+    overlap = float(sys.argv[4])
+    if overlap<0 or overlap>1:
+        raise ValueError("overlap must be in the range [0, 1]")
+    
 # Segmentation metrics and their default values for when there are no detected
 # objects on which to evaluate them.
 #
@@ -49,11 +56,9 @@ segmentation_metrics = {'dice': [0],
                         'msd': [LARGE]}
 
 # Initialize results dictionaries
-lesion_detection_stats = {0:   {'TP': [], 'FP': [], 'FN': []},
-                          0.5: {'TP': [], 'FP': [], 'FN': []}}
-split_merge_errors = {0:   {'merge': [], 'split': []},
-                      0.5: {'merge': [], 'split': []}}
-detection_status = {0: [], 0.5: []}
+lesion_detection_stats = {'TP': [], 'FP': [], 'FN': []}
+split_merge_errors = {'merge': [], 'split': []}
+detection_status = []
 lesion_segmentation_scores = {}
 liver_segmentation_scores = {}
 dice_per_case = {'lesion': [], 'liver': []}
@@ -122,26 +127,24 @@ for reference_volume_fn in reference_volume_list:
     print("Done finding connected components ({:.2f} seconds)".format(t()))
     
     # Identify detected lesions.
-    # Retain detected_mask_lesion for overlap > 0.5
-    for overlap in [0, 0.5]:
-        detection_out = detect_lesions(prediction_mask=pred_mask_lesion,
-                                       reference_mask=true_mask_lesion,
-                                       min_overlap=overlap)
-        detected_mask_lesion, mod_ref_mask, \
-        n_detected, n_merge_errors, n_split_errors, \
-        g_id_detected = detection_out
-        
-        # Count true/false positive and false negative detections.
-        lesion_detection_stats[overlap]['TP'].append(n_detected)
-        lesion_detection_stats[overlap]['FP'].append(n_predicted-n_detected)
-        lesion_detection_stats[overlap]['FN'].append(n_reference-n_detected)
-        
-        # Count merge and split errors.
-        split_merge_errors[overlap]['merge'].append(n_merge_errors)
-        split_merge_errors[overlap]['split'].append(n_split_errors)
-        
-        # Note which reference lesions were detected and which were not.
-        detection_status[overlap].append(g_id_detected)
+    detection_out = detect_lesions(prediction_mask=pred_mask_lesion,
+                                   reference_mask=true_mask_lesion,
+                                   min_overlap=overlap)
+    detected_mask_lesion, mod_ref_mask, \
+    n_detected, n_merge_errors, n_split_errors, \
+    g_id_detected = detection_out
+    
+    # Count true/false positive and false negative detections.
+    lesion_detection_stats['TP'].append(n_detected)
+    lesion_detection_stats['FP'].append(n_predicted-n_detected)
+    lesion_detection_stats['FN'].append(n_reference-n_detected)
+    
+    # Count merge and split errors.
+    split_merge_errors['merge'].append(n_merge_errors)
+    split_merge_errors['split'].append(n_split_errors)
+    
+    # Note which reference lesions were detected and which were not.
+    detection_status.append(g_id_detected)
         
     print("Done identifying detected lesions ({:.2f} seconds)".format(t()))
     
@@ -262,21 +265,20 @@ Compute and record global metrics given recorded metrics info.
 """
 # Compute lesion detection metrics.
 lesion_detection_metrics = {}
-for overlap in [0, 0.5]:
-    TP = np.sum(lesion_detection_stats[overlap]['TP'])
-    FP = np.sum(lesion_detection_stats[overlap]['FP'])
-    FN = np.sum(lesion_detection_stats[overlap]['FN'])
-    precision = float(TP)/(TP+FP) if TP+FP else 0
-    recall = float(TP)/(TP+FN) if TP+FN else 0
-    n_merge_err = np.sum(split_merge_errors[overlap]['merge'])
-    n_split_err = np.sum(split_merge_errors[overlap]['split'])
-    lesion_detection_metrics['precision_'+str(overlap)] = precision
-    lesion_detection_metrics['recall_'+str(overlap)] = recall
-    lesion_detection_metrics['TP_'+str(overlap)] = TP
-    lesion_detection_metrics['FP_'+str(overlap)] = FP
-    lesion_detection_metrics['FN_'+str(overlap)] = FN
-    lesion_detection_metrics['num_merge_errors_'+str(overlap)] = n_merge_err
-    lesion_detection_metrics['num_split_errors_'+str(overlap)] = n_split_err
+TP = np.sum(lesion_detection_stats['TP'])
+FP = np.sum(lesion_detection_stats['FP'])
+FN = np.sum(lesion_detection_stats['FN'])
+precision = float(TP)/(TP+FP) if TP+FP else 0
+recall = float(TP)/(TP+FN) if TP+FN else 0
+n_merge_err = np.sum(split_merge_errors['merge'])
+n_split_err = np.sum(split_merge_errors['split'])
+lesion_detection_metrics['precision_'+str(overlap)] = precision
+lesion_detection_metrics['recall_'+str(overlap)] = recall
+lesion_detection_metrics['TP_'+str(overlap)] = TP
+lesion_detection_metrics['FP_'+str(overlap)] = FP
+lesion_detection_metrics['FN_'+str(overlap)] = FN
+lesion_detection_metrics['num_merge_errors_'+str(overlap)] = n_merge_err
+lesion_detection_metrics['num_split_errors_'+str(overlap)] = n_split_err
 
 # Compute lesion segmentation metrics.
 lesion_segmentation_metrics = {}
@@ -359,24 +361,22 @@ def record_metric(score_list, metric_name):
         output_file.write(out_line)
     output_file.close()
     
-for overlap in [0, 0.5]:
-    for metric in lesion_detection_stats[overlap]:
-        record_metric(score_list=lesion_detection_stats[overlap][metric],
-                      metric_name='{}_{}'.format(metric, overlap))
-    record_metric(score_list=split_merge_errors[overlap]['merge'],
-                  metric_name='num_merge_errors_'+str(overlap))
-    record_metric(score_list=split_merge_errors[overlap]['split'],
-                  metric_name='num_split_errors_'+str(overlap))
-    detected = []
-    for d in detection_status[overlap]:
-        _detected = []
-        for key in sorted(d.keys()):
-            assert(key in range(1, len(d)+1))
-            _detected.append(d[key])
-        detected.append(_detected)
-    record_metric(score_list=detected,
-                  metric_name='ref_detection_status_'+str(overlap))
-        
+for metric in lesion_detection_stats:
+    record_metric(score_list=lesion_detection_stats[metric],
+                  metric_name='{}_{}'.format(metric, overlap))
+record_metric(score_list=split_merge_errors['merge'],
+              metric_name='num_merge_errors_'+str(overlap))
+record_metric(score_list=split_merge_errors['split'],
+              metric_name='num_split_errors_'+str(overlap))
+detected = []
+for d in detection_status:
+    _detected = []
+    for key in sorted(d.keys()):
+        assert(key in range(1, len(d)+1))
+        _detected.append(d[key])
+    detected.append(_detected)
+record_metric(score_list=detected,
+              metric_name='ref_detection_status_'+str(overlap))
 for metric in lesion_segmentation_scores:
     record_metric(score_list=lesion_segmentation_scores[metric],
                   metric_name='lesion_{}'.format(metric))
