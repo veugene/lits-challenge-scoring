@@ -15,6 +15,7 @@ from helpers.calc_metric import (dice,
                                  LARGE)
 from helpers.binary_morphology import binary_dilation
 from helpers.utils import time_elapsed
+from helpers.minimum_bounding_box import minimum_bounding_box
 
 
 # Check input directories.
@@ -60,7 +61,8 @@ dice_global_x = {'lesion': {'I': 0, 'S': 0},
                  'liver':  {'I': 0, 'S': 0}} # 2*I/S
 tumor_burden_list = []
 volume_id_list = []
-lesion_sizes = {'reference': [], 'prediction': []}
+lesion_volumes = {'reference': [], 'prediction': []}
+lesion_lengths = {'reference': [], 'prediction': []}
 
                
 """
@@ -119,12 +121,6 @@ for reference_volume_fn in reference_volume_list:
     liver_exists = np.any(submission_volume==1) and np.any(reference_volume==1)
     print("Done finding connected components ({:.2f} seconds)".format(t()))
     
-    # Compute lesion volume.
-    volume_ref = np.product(voxel_spacing)*np.count_nonzero(true_mask_lesion)
-    volume_pre = np.product(voxel_spacing)*np.count_nonzero(pred_mask_lesion)
-    lesion_sizes['reference'].append(volume_ref)
-    lesion_sizes['prediction'].append(volume_pre)
-    
     # Identify detected lesions.
     # Retain detected_mask_lesion for overlap > 0.5
     for overlap in [0, 0.5]:
@@ -148,6 +144,41 @@ for reference_volume_fn in reference_volume_list:
         detection_status[overlap].append(g_id_detected)
         
     print("Done identifying detected lesions ({:.2f} seconds)".format(t()))
+    
+    # Compute lesion volumes and largest diameters for reference and DETECTED
+    # lesions.
+    mask = {'reference': true_mask_lesion,
+            'prediction': detected_mask_lesion}
+    volumes, lengths = {}, {}
+    for key in ['reference', 'prediction']:
+        volumes[key] = []
+        lengths[key] = []
+        for l_id in np.unique(mask[key]):
+            if l_id==0:
+                continue
+            #
+            # Volume
+            vol = np.count_nonzero(mask[key]==l_id)*np.prod(voxel_spacing)
+            volumes[key].append(vol)
+            #
+            # Maximum diameter
+            x, y, z = np.where(mask[key]==l_id)
+            points = list(zip(x, y))
+            if len(points)==1:
+                diam = max(voxel_spacing[0], voxel_spacing[1])
+            elif len(points)==2:
+                diam = np.subtract(points[0], points[1])
+                diam *= np.array(voxel_spacing)
+                diam = np.sqrt(np.sum(diam**2))
+            else:
+                bbox = minimum_bounding_box(points)
+                uvec_len = bbox.unit_vector*np.array(voxel_spacing[:2])
+                uvec_len = np.sqrt(np.sum(uvec_len**2))
+                diam = bbox.length_parallel*uvec_len
+            lengths[key].append(diam) 
+        lesion_volumes[key].append(volumes[key])
+        lesion_lengths[key].append(lengths[key])
+    print("Done computing lesion sizes ({:.2f} seconds)".format(t()))
     
     # Compute segmentation scores for DETECTED lesions.
     if n_detected>0:
@@ -357,7 +388,11 @@ record_metric(score_list=dice_per_case['lesion'],
 record_metric(score_list=dice_per_case['liver'],
               metric_name='liver_dice_per_case')
 record_metric(score_list=tumor_burden_list, metric_name='tumor_burden')
-record_metric(score_list=lesion_sizes['reference'],
+record_metric(score_list=lesion_volumes['reference'],
               metric_name='lesion_volume_reference')
-record_metric(score_list=lesion_sizes['prediction'],
+record_metric(score_list=lesion_volumes['prediction'],
               metric_name='lesion_volume_prediction')
+record_metric(score_list=lesion_lengths['reference'],
+              metric_name='lesion_length_reference')
+record_metric(score_list=lesion_lengths['prediction'],
+              metric_name='lesion_length_prediction')

@@ -195,8 +195,6 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
                     # Note which g_id were detected.
                     for _g_id in g_merged_ids[g_id]:
                         g_id_detected[_g_id] = 1
-    print("DEBUG: num_detected={}, p_id_list={}, g_id_detected={}"
-          "".format(num_detected, p_id_list, g_id_detected))
                 
     return (detected_mask, mod_reference_mask,
             num_detected, num_merge_errors, num_split_errors,
