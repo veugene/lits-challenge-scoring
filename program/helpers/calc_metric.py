@@ -33,9 +33,13 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
     :param prediction_mask: numpy.array
     :param reference_mask: numpy.array
     :param min_overlap: float in range [0, 1.]
-    :return: prediction mask (int),
-             reference mask (int),
-             num_detected
+    :return: prediction mask (uint8),
+             reference mask (uint8),
+             num_detected,
+             num_merge_errors,
+             num_split_errors,
+             g_id_detected,
+             id_mapping
     """
     
     # Initialize
@@ -195,10 +199,15 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
                     # Note which g_id were detected.
                     for _g_id in g_merged_ids[g_id]:
                         g_id_detected[_g_id] = 1
+                        
+    # Specify mapping of reference ids to predicted ids (handle merges).
+    id_mapping = {}
+    for key in g_merged_ids.keys():
+        id_mapping[key] = g_merged_ids[key][0]
                 
     return (detected_mask, mod_reference_mask,
             num_detected, num_merge_errors, num_split_errors,
-            g_id_detected)
+            g_id_detected, id_mapping)
 
 
 def compute_tumor_burden(prediction_mask, reference_mask):
@@ -225,7 +234,7 @@ def compute_tumor_burden(prediction_mask, reference_mask):
 
 
 def compute_segmentation_scores(prediction_mask, reference_mask,
-                                voxel_spacing):
+                                voxel_spacing, id_mapping):
     """
     Calculates metrics scores from numpy arrays and returns an dict.
     
@@ -236,6 +245,7 @@ def compute_segmentation_scores(prediction_mask, reference_mask,
     :param prediction_mask: numpy.array, int
     :param reference_mask: numpy.array, int
     :param voxel_spacing: list with x,y and z spacing
+    :param id_mapping: dict mapping reference id to prediction id
     :return: dict with dice, jaccard, voe, rvd, assd, rmsd, and msd
     """
     
@@ -247,16 +257,13 @@ def compute_segmentation_scores(prediction_mask, reference_mask,
               'rmsd': [],
               'msd': []}
     
-    for i, obj_id in enumerate(np.unique(prediction_mask)):
-        if obj_id==0:
-            continue    # 0 is background, not an object; skip
-
+    for r_id, m_id in id_mapping.items():
         # Limit processing to the bounding box containing both the prediction
         # and reference objects.
-        target_mask = (reference_mask==obj_id)+(prediction_mask==obj_id)
+        target_mask = (reference_mask==m_id)+(prediction_mask==m_id)
         bounding_box = ndimage.find_objects(target_mask)[0]
-        p = (prediction_mask==obj_id)[bounding_box]
-        r = (reference_mask==obj_id)[bounding_box]
+        p = (prediction_mask==m_id)[bounding_box]
+        r = (reference_mask==m_id)[bounding_box]
         if np.any(p) and np.any(r):
             dice = metric.dc(p,r)
             jaccard = dice/(2.-dice)

@@ -61,6 +61,9 @@ split_merge_errors = {'merge': [], 'split': []}
 detection_status = []
 lesion_segmentation_scores = {}
 liver_segmentation_scores = {}
+for key in segmentation_metrics:
+    lesion_segmentation_scores[key] = []
+    liver_segmentation_scores[key] = []
 dice_per_case = {'lesion': [], 'liver': []}
 dice_global_x = {'lesion': {'I': 0, 'S': 0},
                  'liver':  {'I': 0, 'S': 0}} # 2*I/S
@@ -132,7 +135,7 @@ for reference_volume_fn in reference_volume_list:
                                    min_overlap=overlap)
     detected_mask_lesion, mod_ref_mask, \
     n_detected, n_merge_errors, n_split_errors, \
-    g_id_detected = detection_out
+    g_id_detected, id_mapping = detection_out
     
     # Count true/false positive and false negative detections.
     lesion_detection_stats['TP'].append(n_detected)
@@ -148,17 +151,23 @@ for reference_volume_fn in reference_volume_list:
         
     print("Done identifying detected lesions ({:.2f} seconds)".format(t()))
     
-    # Compute lesion volumes and largest diameters for reference and DETECTED
+    # Compute lesion volumes and largest diameters for reference and detected
     # lesions.
+    #
+    # For predicted lesions, sizes are reported for the prediction
+    # corresponding to each reference lesion, only. If a reference lesion is
+    # not detected, sizes of zero are recorded.  In case of split errors, all 
+    # split predicted components are considered together. In case of merge 
+    # errors, the same sizes are recorded for every merged reference component.
     mask = {'reference': true_mask_lesion,
             'prediction': detected_mask_lesion}
+    l_id_list = {'reference': id_mapping.keys(),
+                 'prediction': id_mapping.values()}
     volumes, lengths = {}, {}
     for key in ['reference', 'prediction']:
         volumes[key] = []
         lengths[key] = []
-        for l_id in np.unique(mask[key]):
-            if l_id==0:
-                continue
+        for l_id in l_id_list[key]:
             #
             # Volume
             vol = np.count_nonzero(mask[key]==l_id)*np.prod(voxel_spacing)
@@ -167,7 +176,9 @@ for reference_volume_fn in reference_volume_list:
             # Maximum diameter
             x, y, z = np.where(mask[key]==l_id)
             points = list(zip(x, y))
-            if len(points)==1:
+            if len(points)==0:
+                diam = 0
+            elif len(points)==1:
                 diam = max(voxel_spacing[0], voxel_spacing[1])
             elif len(points)==2:
                 diam = np.subtract(points[0], points[1])
@@ -183,41 +194,27 @@ for reference_volume_fn in reference_volume_list:
         lesion_lengths[key].append(lengths[key])
     print("Done computing lesion sizes ({:.2f} seconds)".format(t()))
     
-    # Compute segmentation scores for DETECTED lesions.
-    if n_detected>0:
-        lesion_scores = compute_segmentation_scores( \
+    # Compute segmentation scores with respect to every reference lesion.
+    #
+    # In case of merge errors, scores are repeated for every merged lesion.
+    lesion_scores = compute_segmentation_scores( \
                                           prediction_mask=detected_mask_lesion,
                                           reference_mask=mod_ref_mask,
-                                          voxel_spacing=voxel_spacing)
-        for metric in segmentation_metrics:
-            if metric not in lesion_segmentation_scores:
-                lesion_segmentation_scores[metric] = []
-            lesion_segmentation_scores[metric].append(lesion_scores[metric])
-        print("Done computing lesion scores ({:.2f} seconds)".format(t()))
-    else:
-        print("No lesions detected, skipping lesion score evaluation")
+                                          voxel_spacing=voxel_spacing,
+                                          id_mapping=id_mapping)
+    for metric in segmentation_metrics:
+        lesion_segmentation_scores[metric].append(lesion_scores[metric])
+    print("Done computing lesion scores ({:.2f} seconds)".format(t()))
     
     # Compute liver segmentation scores. 
-    if liver_exists:
-        liver_scores = compute_segmentation_scores( \
+    liver_scores = compute_segmentation_scores( \
                                           prediction_mask=pred_mask_liver,
                                           reference_mask=true_mask_liver,
-                                          voxel_spacing=voxel_spacing)
-        for metric in segmentation_metrics:
-            if metric not in liver_segmentation_scores:
-                liver_segmentation_scores[metric] = []
-            liver_segmentation_scores[metric].append(liver_scores[metric])
-        print("Done computing liver scores ({:.2f} seconds)".format(t()))
-    else:
-        # No liver label. Record default score values (zeros, inf).
-        # NOTE: This will make some metrics evaluate to inf over the entire
-        # dataset.
-        for metric in segmentation_metrics:
-            if metric not in liver_segmentation_scores:
-                liver_segmentation_scores[metric] = []
-            liver_segmentation_scores[metric].append(\
-                                                  segmentation_metrics[metric])
-        print("No liver label provided, skipping liver score evaluation")
+                                          voxel_spacing=voxel_spacing,
+                                          id_mapping={1:1})
+    for metric in segmentation_metrics:
+        liver_segmentation_scores[metric].append(liver_scores[metric])
+    print("Done computing liver scores ({:.2f} seconds)".format(t()))
         
     # Compute per-case (per patient volume) dice.
     if not np.any(pred_mask_lesion) and not np.any(true_mask_lesion):
@@ -280,10 +277,14 @@ lesion_detection_metrics['FN_'+str(overlap)] = FN
 lesion_detection_metrics['num_merge_errors_'+str(overlap)] = n_merge_err
 lesion_detection_metrics['num_split_errors_'+str(overlap)] = n_split_err
 
-# Compute lesion segmentation metrics.
+# Compute global lesion segmentation metrics.
 lesion_segmentation_metrics = {}
 for m in lesion_segmentation_scores:
-    scores = sum(lesion_segmentation_scores[m], [])     # flatten lists
+    scores = []
+    for d_list in detection_status:
+        for i, detected in enumerate(d_list):
+            if detected:
+                scores.append(lesion_segmentation_scores[m][i])
     lesion_segmentation_metrics[m] = np.mean(scores)
 if len(lesion_segmentation_scores)==0:
     # Nothing detected - set default values.
@@ -292,10 +293,14 @@ lesion_segmentation_metrics['dice_per_case'] = np.mean(dice_per_case['lesion'])
 dice_global = 2.*dice_global_x['lesion']['I']/dice_global_x['lesion']['S']
 lesion_segmentation_metrics['dice_global'] = dice_global
     
-# Compute liver segmentation metrics.
+# Compute global liver segmentation metrics.
 liver_segmentation_metrics = {}
 for m in liver_segmentation_scores:
-    scores = sum(liver_segmentation_scores[m], [])     # flatten lists
+    scores = []
+    for d_list in detection_status:
+        for i, detected in enumerate(d_list):
+            if detected:
+                scores.append(liver_segmentation_scores[m][i])
     liver_segmentation_metrics[m] = np.mean(scores)
 if len(liver_segmentation_scores)==0:
     # Nothing detected - set default values.
