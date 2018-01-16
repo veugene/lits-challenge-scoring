@@ -35,7 +35,9 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
     :param min_overlap: float in range [0, 1.]
     :return: prediction mask (int),
              reference mask (int),
-             num_detected
+             TP (int),
+             FP (int),
+             FN (int)
     """
     
     # Initialize
@@ -169,7 +171,9 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
             d[p==p_id] = g_id
             
     # Trim away lesions deemed undetected.
-    num_detected = len(p_id_list)
+    TP = sum([g_merge_count[g_id] for g_id in p_id_list])
+    FP = len(np.unique(p))-1 - len(p_id_list)
+    FN = len(g_id_list) - TP
     for i, p_id in enumerate(p_id_list):
         for j, g_id in enumerate(g_id_list):
             intersection = intersection_matrix[i, j]
@@ -179,9 +183,10 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
             overlap_fraction = float(intersection)/union
             if overlap_fraction <= min_overlap:
                 d[d==g_id] = 0      # Assuming one-to-one p_id <--> g_id
-                num_detected -= g_merge_count[g_id]
-                
-    return detected_mask, mod_reference_mask, num_detected
+                TP -= g_merge_count[g_id]
+                FP += 1
+                FN += g_merge_count[g_id]
+    return detected_mask, mod_reference_mask, TP, FP, FN
 
 
 def compute_tumor_burden(prediction_mask, reference_mask):
