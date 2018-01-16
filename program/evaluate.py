@@ -134,13 +134,13 @@ for reference_volume_fn in reference_volume_list:
                                    reference_mask=true_mask_lesion,
                                    min_overlap=overlap)
     detected_mask_lesion, mod_ref_mask, \
-    n_detected, n_merge_errors, n_split_errors, \
+    TP, FP, FN, n_merge_errors, n_split_errors, \
     g_id_detected, id_mapping = detection_out
     
     # Count true/false positive and false negative detections.
-    lesion_detection_stats['TP'].append(n_detected)
-    lesion_detection_stats['FP'].append(n_predicted-n_detected)
-    lesion_detection_stats['FN'].append(n_reference-n_detected)
+    lesion_detection_stats['TP'].append(TP)
+    lesion_detection_stats['FP'].append(FP)
+    lesion_detection_stats['FN'].append(FN)
     
     # Count merge and split errors.
     split_merge_errors['merge'].append(n_merge_errors)

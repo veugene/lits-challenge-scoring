@@ -35,13 +35,15 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
     :param prediction_mask: numpy.array
     :param reference_mask: numpy.array
     :param min_overlap: float in range [0, 1.]
-    :return: prediction mask (uint8),
-             reference mask (uint8),
-             num_detected,
-             num_merge_errors,
-             num_split_errors,
-             g_id_detected,
-             id_mapping
+    :return: prediction mask (int),
+             reference mask (int),
+             TP (int),
+             FP (int),
+             FN (int),
+             num_merge_errors (int),
+             num_split_errors (int),
+             g_id_detected (dict),
+             id_mapping (dict)
     """
     
     # Initialize
@@ -66,10 +68,12 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
         g_id_list = g_id_list[1:]
     
     # To reduce computation time, get views into reduced size masks.
+    p_id_fp = []
     reduced_prediction_mask = rpm = prediction_mask.copy()
     for p_id in np.unique(prediction_mask):
         if p_id not in p_id_list and p_id!=0:
             reduced_prediction_mask[(rpm==p_id).nonzero()] = 0
+            p_id_fp.append(p_id)
     target_mask = np.logical_or(reference_mask, reduced_prediction_mask)
     bounding_box = ndimage.find_objects(target_mask)[0]
     r = reference_mask[bounding_box]
@@ -117,15 +121,11 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
         x_ret[replace_slices] = dim_sum
         
         return x_ret
-        
-    # Keep track of which ground truth lesions are detected.
-    g_id_detected = OrderedDict([(g_id, 0) for g_id in g_id_list])
-    g_merged_ids = OrderedDict([(g_id, [g_id]) for g_id in g_id_list])
             
     # Merge and label reference lesions that are connected by predicted
     # lesions.
+    g_merged_ids = OrderedDict([(g_id, [g_id]) for g_id in g_id_list])
     num_merge_errors = 0
-    g_merge_count = OrderedDict([(g_id, 1) for g_id in g_id_list])
     for i, p_id in enumerate(p_id_list):
         # Identify g_id intersected by p_id
         g_id_indices = intersection_matrix[i].nonzero()[0]
@@ -143,10 +143,8 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
                 g_id_merge.append(g_id)
                 g_id_merge_indices.append(idx)
                 
-        # Update merge count
+        # Update merge error count
         num_merge_errors += max(0, len(g_id_merge)-1)
-        for g_id in g_id_merge:
-            g_merge_count[g_id] = len(g_id_merge)
                 
         # Merge. Update g_id_list, intersection matrix, mod_reference_mask.
         # Merge columns in intersection_matrix.
@@ -183,32 +181,40 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
                                        dims=p_id_indices)
         p_id_list = np.delete(p_id_list, obj=p_id_indices[1:])
         for p_id in p_id_intersected:
-            d[p==p_id] = g_id
-        num_split_errors += max(0, len(p_id_intersected)-g_merge_count[g_id])
+            d[p==p_id] = g_id       # One-to-one p_id <--> g_id
+        num_split_errors += max(0,
+                                len(p_id_intersected)-len(g_merged_ids[g_id]))
+        # Keep track of which ids were merged.
+        for p_id in p_id_intersected:
+            p_merged_ids[p_id] = p_id_intersected
             
-    # Trim away lesions deemed undetected.
-    num_detected = len(p_id_list)
+    # Identify detected lesions.
+    FP = len(p_id_fp)               # Every p_id not intersecting a g_id
+    g_id_detected = OrderedDict([(g_id, 0) for g_id in g_id_list])
     for i, p_id in enumerate(p_id_list):
         for j, g_id in enumerate(g_id_list):
             intersection = intersection_matrix[i, j]
-            if intersection!=0:
-                union = np.count_nonzero(np.logical_or(d==p_id, m==g_id))
-                overlap_fraction = float(intersection)/union
-                if overlap_fraction <= min_overlap:
-                    d[d==g_id] = 0      # Assuming one-to-one p_id <--> g_id
-                    num_detected -= g_merge_count[g_id]
-                else:
-                    # Note which g_id were detected.
-                    for _g_id in g_merged_ids[g_id]:
-                        g_id_detected[_g_id] = 1
-                        
+            if intersection==0:
+                continue
+            union = np.count_nonzero(np.logical_or(d==g_id, m==g_id))
+            overlap_fraction = float(intersection)/union
+            if overlap_fraction <= min_overlap:
+                d[d==g_id] = 0      # Assuming one-to-one p_id <--> g_id
+                FP += len(p_merged_ids[p_id])   # Num p_id merged together
+            else:
+                # Note which g_id were detected.
+                for _g_id in g_merged_ids[g_id]:
+                    g_id_detected[_g_id] = 1
+    TP = sum([v==1 for v in g_id_detected.values()])    # Non-merged g_id
+    FN = sum([v==0 for v in g_id_detected.values()])    # Non-merged g_id
+                
     # Specify mapping of reference ids to predicted ids (handle merges).
     id_mapping = OrderedDict()
     for key in g_merged_ids.keys():
         id_mapping[key] = g_merged_ids[key][0]
                 
     return (detected_mask, mod_reference_mask,
-            num_detected, num_merge_errors, num_split_errors,
+            TP, FP, FN, num_merge_errors, num_split_errors,
             g_id_detected, id_mapping)
 
 
