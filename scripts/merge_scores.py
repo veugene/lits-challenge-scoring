@@ -12,8 +12,10 @@ from collections import OrderedDict
 
 # Files of interest contain these strings in their names.
 detection_status_str = "ref_detection_status"
-size_strings = ["lesion_volume_reference",
-                "lesion_length_reference"]
+ref_size_strings = ["lesion_volume_reference",
+                    "lesion_length_reference"]
+pre_size_strings = ["lesion_volume_prediction",
+                    "lesion_length_prediction"]
 other_per_lesion_strings = ["lesion_assd",
                             "lesion_rmsd",
                             "lesion_msd",
@@ -37,116 +39,124 @@ def read_csv(fn):
         raise IOError("Failed to read file {}".format(fn))
     return contents
     
-
-# Given a dict with case names as keys and lists of per-lesion metrics, return
-# a list with all per-lesion metrics concatenated.
-#
-# If detection_status is passed, put blank for every missing lesion.
-def dict_to_list(d, detection_status=None):
-    ret_list = []
-    for key in d:
-        if detection_status is None:
-            ret_list.extend(d[key])
-        else:
-            for i, status in enumerate(detection_status[key]):
-                if float(status)==0:
-                    ret_list.append("")
-                else:
-                    ret_list.append(d[key][i])
-        #print(key, len(ret_list))
-    return ret_list
+    
+# Find the first file with this string in the filename.
+def find_first_file(rootdir, fn_str):
+    path = None
+    for fn in os.listdir(rootdir):
+        if fn_str in fn:
+            if path is not None:
+                raise Exception("More than one file with {} in the filename."
+                                "".format(fn_str))
+            path = os.path.join(rootdir, fn)
+    if path is None:
+        raise Exception("No file found with {} in the filename found."
+                        "".format(fn_str))
+    return path
     
     
 for dn in os.listdir(scores_dir):
-    print("Processing {}".format(os.path.join(scores_dir, dn)))
-
-    # Read detection status file.
-    detection_status = None
-    for fn in os.listdir(os.path.join(scores_dir, dn)):
-        if detection_status_str in fn:
-            if detection_status is not None:
-                raise Exception("More than one file with "
-                                "\'detection_status\' in the filename.")
-            detection_status = read_csv(os.path.join(scores_dir, dn, fn))
-    if detection_status is None:
-        raise Exception("No file with \'detection status\' in the filename "
-                        "found.")
+    rootdir = os.path.join(scores_dir, dn)
+    print("Processing {}".format(rootdir))
         
     # Set up data structures to store sizes and other metrics.
-    # Dict of lists; first list is case name. Each inner list represents 
-    # column. One column per metric.
-    size_grid = OrderedDict((('case_name', []),))
-    metrics_grid = OrderedDict((('case_name', []),))
-
-    # Set up first column. Case name for each lesion.
-    case_names = []
-    for key in detection_status.keys():
-        name_list = [key]*len(detection_status[key])
-        case_names.extend(name_list)
-    size_grid['case_name'] = case_names
-    metrics_grid['case_name'] = case_names
-
-    # Read sizes.
-    for m_str in size_strings:
-        if m_str not in size_grid:
-            size_grid[m_str] = []
-        for fn in os.listdir(os.path.join(scores_dir, dn)):
-            if m_str not in fn:
-                continue
-            contents_dict = read_csv(os.path.join(scores_dir, dn, fn))
-            size_grid[m_str].extend( dict_to_list(contents_dict) )
+    # Dict of dicts. First dict has metrics as keys. Second has cases as keys.
+    # Contains list of metric values for the case.
+    ref_size = OrderedDict()
+    pre_size = OrderedDict()
+    metrics = OrderedDict()
     
+    # Read detection status file.
+    detection_status = read_csv(find_first_file(rootdir, detection_status_str))
 
+    # Read reference sizes.
+    for m_str in ref_size_strings:
+        ref_size[m_str] = read_csv(find_first_file(rootdir, m_str))
+            
+    # Read prediction sizes.
+    for m_str in pre_size_strings:
+        pre_size[m_str] = read_csv(find_first_file(rootdir, m_str))
+    
     # Read other metrics.
     for m_str in other_per_lesion_strings:
-        if m_str not in metrics_grid:
-            metrics_grid[m_str] = []
-        for fn in os.listdir(os.path.join(scores_dir, dn)):
-            if m_str not in fn:
-                continue
-            #print("DEBUG", fn)
-            contents_dict = read_csv(os.path.join(scores_dir, dn, fn))
-            contents_list = dict_to_list(contents_dict, detection_status)
-            metrics_grid[m_str].extend(contents_list)
+        metrics[m_str] = read_csv(find_first_file(rootdir, m_str))
+                    
     
-    
+    # Target filenames start with this string.
     scores_str = scores_dir.split('/')[-1]
     
+    # Save csv tracking false positives by size.
+    path = os.path.join(scores_dir, dn, scores_str+"_FP_by_size.txt")
+    try:
+        f_ = open(path, 'wt')
+        line = ",".join(['case_name']+pre_size_strings)+"\n"
+        f_.write(line)
+        for case_name in detection_status:
+            # For every reference lesion, there is a predicted lesion 
+            # size in the same order as the reference lesion sizes. All
+            # sizes reported thereafter are for false positive 
+            # predictions.
+            #
+            # Aggregate the sizes for these false positives.
+            n_ref = len(ref_size[ref_size_strings[0]][case_name])
+            n_pre = len(pre_size[pre_size_strings[0]][case_name])
+            for idx in range(n_ref, n_pre):
+                p_list = [pre_size[key][case_name][idx] for key in pre_size]
+                line = "{},{}\n".format(case_name, ",".join(p_list))
+                f_.write(line)
+    except:
+        raise IOError("Failed to write file {}".format(path))
+        
+    
     # Save csv for sizes + detection status.
-    for key in size_grid:
-        assert(len(size_grid[key])==len(size_grid['case_name']))
     path = os.path.join(scores_dir, dn, scores_str+"_detection_with_sizes.txt")
     try:
         f_ = open(path, 'wt')
-        line = ",".join(list(size_grid.keys())+['detection_status'])+"\n"
+        line = ",".join(['case_name'] +\
+                        list(ref_size.keys()) +\
+                        list(pre_size.keys()) +\
+                        ['detection_status']) + "\n"
         f_.write(line)
-        detection_status_list = []
-        for key in detection_status.keys():
-            detection_status_list.extend(detection_status[key])
-        for idx, case_name in enumerate(size_grid['case_name']):
-            s_list = [size_grid[key][idx] for key in size_grid.keys()]
-            line = ",".join(s_list)+",{}\n".format(detection_status_list[idx])
-            f_.write(line)
+        for case_name in detection_status:
+            num_lesions = len(detection_status[case_name])
+            for idx in range(num_lesions):
+                r_list = [ref_size[key][case_name][idx] for key in ref_size]
+                p_list = [pre_size[key][case_name][idx] for key in pre_size]
+                line = "{},{},{},{}\n".format(case_name,
+                                              ",".join(r_list),
+                                              ",".join(p_list),
+                                              detection_status[case_name][idx])
+                f_.write(line)
         f_.close()
     except:
         raise IOError("Failed to write file {}".format(path))
     
     # Save csv for sizes + segmentation metrics.
-    for key in metrics_grid:
-        assert(len(metrics_grid[key])==len(metrics_grid['case_name']))
     path = os.path.join(scores_dir, dn,
                         scores_str+"_segmentation_with_sizes.txt")
     try:
         f_ = open(path, 'wt')
-        key_list = list(size_grid.keys())+list(metrics_grid.keys())[1:]
-        line = ",".join(key_list)+"\n"
+        line = ",".join(['case_name'] +\
+                        list(ref_size.keys()) +\
+                        list(pre_size.keys()) +\
+                        list(metrics.keys())) + "\n"
         f_.write(line)
-        for idx in range(len(metrics_grid['case_name'])):
-            s_list = [size_grid[key][idx] for key in size_grid.keys()]
-            m_list = [metrics_grid[key][idx] for key in metrics_grid.keys()
-                      if key!='case_name']
-            line = ",".join(s_list+m_list)+"\n"
-            f_.write(line)
+        for case_name in detection_status:
+            num_lesions = len(detection_status[case_name])
+            for idx in range(num_lesions):
+                r_list = [ref_size[key][case_name][idx] for key in ref_size]
+                if detection_status[case_name][idx]=="1":
+                    p_list = [pre_size[key][case_name][idx] for key in pre_size]
+                    m_list = [metrics[key][case_name][idx] for key in metrics]
+                else:
+                    p_list = ["" for key in pre_size]
+                    m_list = ["" for key in metrics]
+                line = "{},{},{},{}\n".format( \
+                                              case_name,
+                                              ",".join(r_list),
+                                              ",".join(p_list),
+                                              ",".join(m_list))
+                f_.write(line)
         f_.close()
     except:
         raise IOError("Failed to write file {}".format(path))

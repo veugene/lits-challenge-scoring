@@ -1,7 +1,9 @@
+import time
+from collections import OrderedDict
+
 from medpy import metric
 import numpy as np
 from scipy import ndimage
-import time
 
 from .surface import Surface
 
@@ -117,13 +119,13 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
         return x_ret
         
     # Keep track of which ground truth lesions are detected.
-    g_id_detected = dict([(g_id, 0) for g_id in g_id_list])
-    g_merged_ids = dict([(g_id, [g_id]) for g_id in g_id_list])
+    g_id_detected = OrderedDict([(g_id, 0) for g_id in g_id_list])
+    g_merged_ids = OrderedDict([(g_id, [g_id]) for g_id in g_id_list])
             
     # Merge and label reference lesions that are connected by predicted
     # lesions.
     num_merge_errors = 0
-    g_merge_count = dict([(g_id, 1) for g_id in g_id_list])
+    g_merge_count = OrderedDict([(g_id, 1) for g_id in g_id_list])
     for i, p_id in enumerate(p_id_list):
         # Identify g_id intersected by p_id
         g_id_indices = intersection_matrix[i].nonzero()[0]
@@ -201,7 +203,7 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
                         g_id_detected[_g_id] = 1
                         
     # Specify mapping of reference ids to predicted ids (handle merges).
-    id_mapping = {}
+    id_mapping = OrderedDict()
     for key in g_merged_ids.keys():
         id_mapping[key] = g_merged_ids[key][0]
                 

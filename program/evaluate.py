@@ -147,41 +147,37 @@ for reference_volume_fn in reference_volume_list:
     split_merge_errors['split'].append(n_split_errors)
     
     # Note which reference lesions were detected and which were not.
-    detection_status.append(g_id_detected)
-        
+    detection_status.append(list(g_id_detected.values()))
     print("Done identifying detected lesions ({:.2f} seconds)".format(t()))
     
     # Compute lesion volumes and largest diameters for reference and detected
     # lesions.
     #
     # For predicted lesions, sizes are reported for the prediction
-    # corresponding to each reference lesion, only. If a reference lesion is
-    # not detected, sizes of zero are recorded.  In case of split errors, all 
-    # split predicted components are considered together. In case of merge 
-    # errors, the same sizes are recorded for every merged reference component.
-    mask = {'reference': true_mask_lesion,
-            'prediction': detected_mask_lesion}
-    l_id_list = {'reference': id_mapping.keys(),
-                 'prediction': id_mapping.values()}
-    volumes, lengths = {}, {}
-    for key in ['reference', 'prediction']:
-        volumes[key] = []
-        lengths[key] = []
-        for l_id in l_id_list[key]:
+    # corresponding to each reference lesion. The size for every prediction 
+    # that does not correspond to a reference lesion is recorded thereafter.
+    # If a reference lesion is not detected, sizes of zero are recorded.  In
+    # case of split errors, all split predicted components are considered 
+    # together. In case of merge errors, the same sizes are recorded for every
+    # merged reference component.
+    def compute_sizes(l_id_list, mask):
+        volumes = []
+        lengths = []
+        for l_id in l_id_list:
             #
             # Volume
-            vol = np.count_nonzero(mask[key]==l_id)*np.prod(voxel_spacing)
-            volumes[key].append(vol)
+            vol = np.count_nonzero(mask==l_id)*np.prod(voxel_spacing)
+            volumes.append(vol)
             #
             # Maximum diameter
-            x, y, z = np.where(mask[key]==l_id)
+            x, y, z = np.where(mask==l_id)
             points = list(zip(x, y))
             if len(points)==0:
                 diam = 0
             elif len(points)==1:
                 diam = max(voxel_spacing[0], voxel_spacing[1])
             elif len(points)==2:
-                diam = np.subtract(points[0], points[1])
+                diam = np.subtract(points[0], points[1]).astype(np.float32)
                 diam *= np.array(voxel_spacing)
                 diam = np.sqrt(np.sum(diam**2))
             else:
@@ -189,9 +185,25 @@ for reference_volume_fn in reference_volume_list:
                 uvec_len = bbox.unit_vector*np.array(voxel_spacing[:2])
                 uvec_len = np.sqrt(np.sum(uvec_len**2))
                 diam = bbox.length_parallel*uvec_len
-            lengths[key].append(diam) 
-        lesion_volumes[key].append(volumes[key])
-        lesion_lengths[key].append(lengths[key])
+            lengths.append(diam)
+        return volumes, lengths
+    #
+    # Reference lesion sizes.
+    volumes, lengths = compute_sizes(l_id_list=id_mapping.keys(),
+                                     mask=true_mask_lesion)
+    lesion_volumes['reference'].append(volumes)
+    lesion_lengths['reference'].append(lengths)
+    #
+    # Predicted lesion sizes.
+    pred_l_id_list = list(id_mapping.values())
+    volumes_tp, lengths_tp = compute_sizes(l_id_list=pred_l_id_list,
+                                           mask=detected_mask_lesion)
+    id_false_positive = np.unique(np.logical_xor(detected_mask_lesion,
+                                                 pred_mask_lesion))[1:]
+    volumes_fp, lengths_fp = compute_sizes(l_id_list=id_false_positive,
+                                           mask=pred_mask_lesion)
+    lesion_volumes['prediction'].append(volumes_tp + volumes_fp)
+    lesion_lengths['prediction'].append(lengths_tp + lengths_fp)
     print("Done computing lesion sizes ({:.2f} seconds)".format(t()))
     
     # Compute segmentation scores with respect to every reference lesion.
@@ -281,10 +293,11 @@ lesion_detection_metrics['num_split_errors_'+str(overlap)] = n_split_err
 lesion_segmentation_metrics = {}
 for m in lesion_segmentation_scores:
     scores = []
-    for d_list in detection_status:
-        for i, detected in enumerate(d_list):
+    for i, d_list in enumerate(detection_status):
+        print(lesion_segmentation_scores[m][i], d_list)
+        for j, detected in enumerate(d_list):
             if detected:
-                scores.append(lesion_segmentation_scores[m][i])
+                scores.append(lesion_segmentation_scores[m][i][j])
     lesion_segmentation_metrics[m] = np.mean(scores)
 if len(lesion_segmentation_scores)==0:
     # Nothing detected - set default values.
@@ -296,11 +309,7 @@ lesion_segmentation_metrics['dice_global'] = dice_global
 # Compute global liver segmentation metrics.
 liver_segmentation_metrics = {}
 for m in liver_segmentation_scores:
-    scores = []
-    for d_list in detection_status:
-        for i, detected in enumerate(d_list):
-            if detected:
-                scores.append(liver_segmentation_scores[m][i])
+    scores = sum(liver_segmentation_scores[m], [])
     liver_segmentation_metrics[m] = np.mean(scores)
 if len(liver_segmentation_scores)==0:
     # Nothing detected - set default values.
@@ -373,14 +382,7 @@ record_metric(score_list=split_merge_errors['merge'],
               metric_name='num_merge_errors_'+str(overlap))
 record_metric(score_list=split_merge_errors['split'],
               metric_name='num_split_errors_'+str(overlap))
-detected = []
-for d in detection_status:
-    _detected = []
-    for key in sorted(d.keys()):
-        assert(key in range(1, len(d)+1))
-        _detected.append(d[key])
-    detected.append(_detected)
-record_metric(score_list=detected,
+record_metric(score_list=detection_status,
               metric_name='ref_detection_status_'+str(overlap))
 for metric in lesion_segmentation_scores:
     record_metric(score_list=lesion_segmentation_scores[metric],
