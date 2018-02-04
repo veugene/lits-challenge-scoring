@@ -172,6 +172,7 @@ def detect_lesions(prediction_mask, reference_mask, min_overlap=0.5):
     #
     # Here, it's fine to merge all p_id that are connected by a g_id since
     # each p_id has already been associated with only one g_id.
+    p_merged_ids = OrderedDict([(p_id, [p_id]) for p_id in p_id_list])
     num_split_errors = 0
     for j, g_id in enumerate(g_id_list):
         p_id_indices = intersection_matrix[:,j].nonzero()[0]

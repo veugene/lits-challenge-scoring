@@ -294,7 +294,6 @@ lesion_segmentation_metrics = {}
 for m in lesion_segmentation_scores:
     scores = []
     for i, d_list in enumerate(detection_status):
-        print(lesion_segmentation_scores[m][i], d_list)
         for j, detected in enumerate(d_list):
             if detected:
                 scores.append(lesion_segmentation_scores[m][i][j])
