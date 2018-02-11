@@ -69,6 +69,7 @@ dice_global_x = {'lesion': {'I': 0, 'S': 0},
                  'liver':  {'I': 0, 'S': 0}} # 2*I/S
 tumor_burden_list = []
 volume_id_list = []
+lesion_volumes_per_case = {'reference': [], 'prediction': []}
 lesion_volumes = {'reference': [], 'prediction': []}
 lesion_lengths = {'reference': [], 'prediction': []}
 
@@ -147,7 +148,7 @@ for reference_volume_fn in reference_volume_list:
     split_merge_errors['split'].append(n_split_errors)
     
     # Note which reference lesions were detected and which were not.
-    detection_status.append(list(g_id_detected.values()))
+    detection_status.append([g_id_detected[key] for key in id_mapping])
     print("Done identifying detected lesions ({:.2f} seconds)".format(t()))
     
     # Compute lesion volumes and largest diameters for reference and detected
@@ -160,6 +161,10 @@ for reference_volume_fn in reference_volume_list:
     # case of split errors, all split predicted components are considered 
     # together. In case of merge errors, the same sizes are recorded for every
     # merged reference component.
+    lesion_volumes_per_case['reference'].append( \
+        np.count_nonzero(true_mask_lesion)*np.prod(voxel_spacing))
+    lesion_volumes_per_case['prediction'].append( \
+        np.count_nonzero(pred_mask_lesion)*np.prod(voxel_spacing))
     def compute_sizes(l_id_list, mask):
         volumes = []
         lengths = []
@@ -394,6 +399,10 @@ record_metric(score_list=dice_per_case['lesion'],
 record_metric(score_list=dice_per_case['liver'],
               metric_name='liver_dice_per_case')
 record_metric(score_list=tumor_burden_list, metric_name='tumor_burden')
+record_metric(score_list=lesion_volumes_per_case['reference'],
+              metric_name='lesion_volume_per_case_reference')
+record_metric(score_list=lesion_volumes_per_case['prediction'],
+              metric_name='lesion_volume_per_case_prediction')
 record_metric(score_list=lesion_volumes['reference'],
               metric_name='lesion_volume_reference')
 record_metric(score_list=lesion_volumes['prediction'],
