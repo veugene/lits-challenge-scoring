@@ -144,6 +144,48 @@ def allocation_disagreement(data, index_pairs):
     return allocation_disagreement
 
 
+def icc(data, indices_A, indices_B):
+    # https://pdfs.semanticscholar.org/378e/
+    # 3e71bc3f2c6cc5af891c91d2f8d65086f363.pdf
+    
+    assert len(indices_A)==len(indices_B)
+    n_replicates = len(indices_A)
+    n_observers = 2
+    n_samples = len(data)
+    
+    # means
+    mean   = np.mean(data[:,indices_A+indices_B])
+    mean_j = np.array([np.mean(data[:,indices_A]), np.mean(data[:,indices_B])])
+    mean_i = np.mean(data[:,indices_A+indices_B], axis=1, keepdims=True)
+    indices = [indices_A, indices_B]
+    
+    # mean square alpha
+    msa = 0
+    for i in range(n_samples):
+        msa += (np.mean(data[i,indices_A+indices_B])-mean)**2
+    msa *= n_observers*n_replicates/float(n_samples-1)
+    
+    # mean square error
+    mse = 0
+    for i in range(n_samples):
+        for j in range(n_observers):
+            for k in range(n_replicates):
+                mse += (data[i,indices[j][k]]-mean_i[i]-mean_j[j]+mean)**2
+    mse /= float((n_observers*n_replicates-1)*n_samples-n_observers+1)
+    
+    # mean square beta
+    msb = 0
+    for j in range(n_observers):
+        msb += (mean_j[j]-mean)**2
+    msb *= n_samples*n_replicates/(n_observers-1)
+    
+    # icc2
+    icc2 = (msa-mse) / (msa+(n_observers-1)*mse+\
+                        n_observers*(msb-mse)/float(n_samples))
+
+    return icc2[0]
+        
+
 ##############################################################################
 # 
 #  DEFINE: Segmentation metrics.
@@ -237,7 +279,7 @@ def scrub_predicted_volumes(csv_det_dict):
     for dn in subdirectories:
         column = []
         for line in csv_det_dict[dn]:
-            column.append(int(line[idx]))
+            column.append(float(line[idx]))
         data.append(column)
     data = np.array(data).T
     return data
@@ -255,7 +297,7 @@ csv_det_dict, csv_seg_dict = load_data(args.scores_dir)
 
 ##############################################################################
 # 
-#  Evaluate detection metrics.
+#  Evaluate detection metrics (kappa, etc).
 # 
 ##############################################################################
 
@@ -357,31 +399,97 @@ for key, index_pairs in index_combinations.items():
     # pooled kappa
     m = pooled_kappa(data_det, index_pairs=index_pairs)
     m_ci = bootstrap(data_det,
-                    metric_function=partial(pooled_kappa,
-                                            index_pairs=index_pairs),
-                    alpha=args.alpha,
-                    n_iterations=args.bootstrap_iterations,
-                    n_proc=args.n_proc)
+                     metric_function=partial(pooled_kappa,
+                                             index_pairs=index_pairs),
+                     alpha=args.alpha,
+                     n_iterations=args.bootstrap_iterations,
+                     n_proc=args.n_proc)
     print("Pooled kappa = {} ({}, {})".format(m, *m_ci))
 
     # quantity disagreement
     m = quantity_disagreement(data_det, index_pairs=index_pairs)
     m_ci = bootstrap(data_det,
-                    metric_function=partial(quantity_disagreement,
-                                            index_pairs=index_pairs),
-                    alpha=args.alpha,
-                    n_iterations=args.bootstrap_iterations,
-                    n_proc=args.n_proc)
+                     metric_function=partial(quantity_disagreement,
+                                             index_pairs=index_pairs),
+                     alpha=args.alpha,
+                     n_iterations=args.bootstrap_iterations,
+                     n_proc=args.n_proc)
     print("Quantity disagreement = {} ({}, {})".format(m, *m_ci))
 
     # allocation disagreement
     m = allocation_disagreement(data_det, index_pairs=index_pairs)
     m_ci = bootstrap(data_det,
-                    metric_function=partial(allocation_disagreement,
-                                            index_pairs=index_pairs),
-                    alpha=args.alpha,
-                    n_iterations=args.bootstrap_iterations,
-                    n_proc=args.n_proc)
+                     metric_function=partial(allocation_disagreement,
+                                             index_pairs=index_pairs),
+                     alpha=args.alpha,
+                     n_iterations=args.bootstrap_iterations,
+                     n_proc=args.n_proc)
     print("Allocation disagreement = {} ({}, {})".format(m, *m_ci))
 
+    print("\n")
+    
+    
+##############################################################################
+# 
+#  Evaluate detection metrics (icc).
+# 
+##############################################################################
+
+data_det = scrub_detection_status(csv_det_dict)
+data_vol = scrub_predicted_volumes(csv_det_dict)
+index_combinations = OrderedDict((
+    ('inter-rater, manual',
+         [(subdirectories.index('manual_A1'),
+           subdirectories.index('manual_A2')),
+          (subdirectories.index('manual_W1'),
+           subdirectories.index('manual_W2'))]
+    ),
+    ('inter-rater, corrected',
+        [(subdirectories.index('correction_A1'),
+          subdirectories.index('correction_A2')),
+         (subdirectories.index('correction_W1'),
+          subdirectories.index('correction_W2'))]
+    ),
+    ('intra-rater, manual',
+        [(subdirectories.index('manual_A1'),
+          subdirectories.index('manual_W1')),
+         (subdirectories.index('manual_A2'),
+          subdirectories.index('manual_W2'))]
+    ),
+    ('intra-rater, corrected',
+        [(subdirectories.index('correction_A1'),
+          subdirectories.index('correction_W1')),
+         (subdirectories.index('correction_A2'),
+          subdirectories.index('correction_W2'))]
+    )
+    ))
+
+
+for key, indices in index_combinations.items():
+    indices_A, indices_B = indices
+    
+    print("DETECTION: {}".format(key))
+    
+    # ICC (detection)
+    m = icc(data_det, indices_A=indices_A, indices_B=indices_B)
+    m_ci = bootstrap(data_det,
+                     metric_function=partial(icc,
+                                             indices_A=indices_A,
+                                             indices_B=indices_B),
+                     alpha=args.alpha,
+                     n_iterations=args.bootstrap_iterations,
+                     n_proc=args.n_proc)
+    print("ICC (detection) = {} ({}, {})".format(m, *m_ci))
+    
+    # ICC (volumes)
+    m = icc(data_vol, indices_A=indices_A, indices_B=indices_B)
+    m_ci = bootstrap(data_vol,
+                     metric_function=partial(icc,
+                                             indices_A=indices_A,
+                                             indices_B=indices_B),
+                     alpha=args.alpha,
+                     n_iterations=args.bootstrap_iterations,
+                     n_proc=args.n_proc)
+    print("ICC (volume) = {} ({}, {})".format(m, *m_ci))
+    
     print("\n")
