@@ -311,6 +311,21 @@ def scrub_predicted_volumes(csv_det_dict):
     return data
 
 
+def scrub_lesion_metric(csv_seg_dict, subdir, metric_name,
+                        min_diameter=None, max_diameter=None):
+    data = []
+    idx = segmentation_entries.index(metric_name)
+    d_idx = segmentation_entries.index('length_reference')
+    for line in csv_seg_dict[subdir]:
+        if _bad_diameter(line[d_idx], min_diameter, max_diameter):
+            continue
+        if line[idx]=="":
+            continue
+        data.append(float(line[idx]))
+    data = np.array(data)
+    return data
+
+
 ##############################################################################
 # 
 #  Setup.
@@ -543,4 +558,30 @@ for dn in subdirectories:
         print("Precision [{}, {}] = {} ({}, {})".format(*limits, m, *m_ci))
     
     print("\n")
+    
+    
+###############################################################################
+## 
+##  Evaluate segmentation metrics.
+## 
+###############################################################################
 
+diameter_ranges = [(None, None), (None, 10), (10, 20), (20, None)]
+for metric_name in ['dice', 'assd', 'msd']:
+    
+    print("SEGMENTATION: {}".format(metric_name))
+    
+    for dn in subdirectories:
+        for limits in diameter_ranges:
+            data_seg = scrub_lesion_metric(csv_seg_dict,
+                                           subdir=dn,
+                                           metric_name=metric_name,
+                                           min_diameter=limits[0],
+                                           max_diameter=limits[1])
+        m = np.mean(data_seg)
+        m_ci = bootstrap(data_seg,
+                         metric_function=np.mean,
+                         **bootstrap_kwargs)
+        print("{} [{}, {}] = {} ({}, {})".format(dn, *limits, m, *m_ci))
+        
+    print("\n")
