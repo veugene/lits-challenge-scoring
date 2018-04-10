@@ -446,7 +446,7 @@ for key, index_pairs in index_combinations.items():
                      metric_function=partial(pooled_kappa,
                                              index_pairs=index_pairs),
                      **bootstrap_kwargs)
-    print("Pooled kappa = {} ({}, {})".format(m, *m_ci))
+    print("Pooled kappa = {:.3f} ({:.3f}, {:.3f})".format(m, *m_ci))
 
     # quantity disagreement
     m = quantity_disagreement(data_det, index_pairs=index_pairs)
@@ -454,7 +454,7 @@ for key, index_pairs in index_combinations.items():
                      metric_function=partial(quantity_disagreement,
                                              index_pairs=index_pairs),
                      **bootstrap_kwargs)
-    print("Quantity disagreement = {} ({}, {})".format(m, *m_ci))
+    print("Quantity disagreement = {:.3f} ({:.3f}, {:.3f})".format(m, *m_ci))
 
     # allocation disagreement
     m = allocation_disagreement(data_det, index_pairs=index_pairs)
@@ -462,7 +462,7 @@ for key, index_pairs in index_combinations.items():
                      metric_function=partial(allocation_disagreement,
                                              index_pairs=index_pairs),
                      **bootstrap_kwargs)
-    print("Allocation disagreement = {} ({}, {})".format(m, *m_ci))
+    print("Allocation disagreement = {:.3f} ({:.3f}, {:.3f})".format(m, *m_ci))
 
     print("\n")
     
@@ -515,7 +515,7 @@ for key, indices in index_combinations.items():
                                              indices_A=indices_A,
                                              indices_B=indices_B),
                      **bootstrap_kwargs)
-    print("ICC (detection) = {} ({}, {})".format(m, *m_ci))
+    print("ICC (detection) = {:.3f} ({:.3f}, {:.3f})".format(m, *m_ci))
     
     # ICC (volumes)
     m = icc(data_vol, indices_A=indices_A, indices_B=indices_B)
@@ -524,7 +524,7 @@ for key, indices in index_combinations.items():
                                              indices_A=indices_A,
                                              indices_B=indices_B),
                      **bootstrap_kwargs)
-    print("ICC (volume) = {} ({}, {})".format(m, *m_ci))
+    print("ICC (volume) = {:.3f} ({:.3f}, {:.3f})".format(m, *m_ci))
     
     print("\n")
     
@@ -549,13 +549,15 @@ for dn in subdirectories:
         m_ci = bootstrap(data_det,
                          metric_function=recall,
                          **bootstrap_kwargs)
-        print("Recall    [{}, {}] = {} ({}, {})".format(*limits, m, *m_ci))
+        print("Recall    [{}, {}] = {:.3f} ({:.3f}, {:.3f})"
+              "".format(*limits, m, *m_ci))
         
         m = precision(data_det)
         m_ci = bootstrap(data_det,
                          metric_function=precision,
                          **bootstrap_kwargs)
-        print("Precision [{}, {}] = {} ({}, {})".format(*limits, m, *m_ci))
+        print("Precision [{}, {}] = {:.3f} ({:.3f}, {:.3f})"
+              "".format(*limits, m, *m_ci))
     
     print("\n")
     
@@ -582,6 +584,7 @@ for metric_name in ['dice', 'assd', 'msd']:
         m_ci = bootstrap(data_seg,
                          metric_function=np.mean,
                          **bootstrap_kwargs)
-        print("{} [{}, {}] = {} ({}, {})".format(dn, *limits, m, *m_ci))
+        print("{} [{}, {}] = {:.3f} ({:.3f}, {:.3f})"
+              "".format(dn, *limits, m, *m_ci))
         
     print("\n")
