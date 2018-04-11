@@ -580,11 +580,11 @@ for metric_name in ['dice', 'assd', 'msd']:
                                            metric_name=metric_name,
                                            min_diameter=limits[0],
                                            max_diameter=limits[1])
-        m = np.mean(data_seg)
-        m_ci = bootstrap(data_seg,
-                         metric_function=np.mean,
-                         **bootstrap_kwargs)
-        print("{} [{}, {}] = {:.3f} ({:.3f}, {:.3f})"
-              "".format(dn, *limits, m, *m_ci))
+            m = np.mean(data_seg)
+            m_ci = bootstrap(data_seg,
+                             metric_function=np.mean,
+                             **bootstrap_kwargs)
+            print("{} [{}, {}] = {:.3f} ({:.3f}, {:.3f})"
+                  "".format(dn, *limits, m, *m_ci))
         
     print("\n")
