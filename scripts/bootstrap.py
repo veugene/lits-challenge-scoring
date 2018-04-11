@@ -170,7 +170,7 @@ def icc(data, indices_A, indices_B):
     msb *= n_samples*n_replicates/(n_observers-1)
     
     # icc2
-    icc2 = (msa-mse) / (msa+(n_observers-1)*mse+\
+    icc2 = (msa-mse) / (msa+(n_observers*n_replicates-1)*mse+\
                         n_observers*(msb-mse)/float(n_samples))
 
     return icc2[0]
