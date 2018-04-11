@@ -545,6 +545,10 @@ for dn in subdirectories:
                                                   subdir=dn,
                                                   min_diameter=limits[0],
                                                   max_diameter=limits[1])
+        if len(data_det)==0:
+            print("Warning: no data in size range [{}, {})"
+                  "".format(*limits))
+            continue
         m = recall(data_det)
         m_ci = bootstrap(data_det,
                          metric_function=recall,
@@ -580,6 +584,10 @@ for metric_name in ['dice', 'assd', 'msd']:
                                            metric_name=metric_name,
                                            min_diameter=limits[0],
                                            max_diameter=limits[1])
+            if len(data_seg)==0:
+                print("Warning: no data in size range [{}, {})"
+                      "".format(*limits))
+                continue
             m = np.mean(data_seg)
             m_ci = bootstrap(data_seg,
                              metric_function=np.mean,
