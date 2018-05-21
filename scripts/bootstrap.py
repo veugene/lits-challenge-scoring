@@ -25,9 +25,11 @@ def parse_args():
 ##############################################################################
 # 
 #  DEFINE: Compute confidence intervals for a metric, using bootstrapping.
+#
+#  `data_sets` is a list of data sets, across which to average statistics.
 # 
 ##############################################################################
-def bootstrap(data, metric_function, alpha,
+def bootstrap(data_sets, metric_function, alpha,
               n_iterations=10000, n_proc=None, rng=None):
     if n_proc is None:
         n_proc = os.cpu_count()
@@ -35,6 +37,32 @@ def bootstrap(data, metric_function, alpha,
             n_proc = 1
     if rng is None:
         rng = np.random.RandomState()
+    
+    # Sample metric.
+    metric_mean_list, sample_metric_list = [], []
+    for data in data_sets:
+        metric_mean, sample_metric = _sample(data=data,
+                                             metric_function=metric_function,
+                                             n_iterations=n_iterations,
+                                             n_proc=n_proc,
+                                             rng=rng)
+        metric_mean_list.append(metric_mean)
+        sample_metric_list.append(sample_metric)
+    metric_mean = np.mean(metric_mean_list)
+    sample_metric = np.mean(sample_metric_list, axis=0)
+    
+    # Confindence interval
+    delta = [np.mean(sample_metric[i])-metric_mean
+             for i in range(n_iterations)]
+    delta = sorted(delta)
+    idx0 = int(len(delta)*alpha//2)
+    idx1 = int(len(delta)-1-idx0)
+    confidence_interval = (metric_mean-delta[idx1], metric_mean-delta[idx0])
+    
+    return confidence_interval
+
+
+def _sample(data, metric_function, n_iterations, n_proc, rng):
     data = np.array(data)
     n_indices = len(data)
     
@@ -52,16 +80,8 @@ def bootstrap(data, metric_function, alpha,
     sample_metric = r.get()
     pool.close()
     pool.join()
-    delta = [np.mean(sample_metric[i])-metric_mean \
-                                                  for i in range(n_iterations)]
     
-    # Confindence interval
-    delta = sorted(delta)
-    idx0 = int(len(delta)*alpha//2)
-    idx1 = int(len(delta)-1-idx0)
-    confidence_interval = (metric_mean-delta[idx1], metric_mean-delta[idx0])
-    
-    return confidence_interval
+    return metric_mean, sample_metric
 
 
 ##############################################################################
@@ -442,7 +462,7 @@ for key, index_pairs in index_combinations.items():
     
     # pooled kappa
     m = pooled_kappa(data_det, index_pairs=index_pairs)
-    m_ci = bootstrap(data_det,
+    m_ci = bootstrap([data_det],
                      metric_function=partial(pooled_kappa,
                                              index_pairs=index_pairs),
                      **bootstrap_kwargs)
@@ -450,7 +470,7 @@ for key, index_pairs in index_combinations.items():
 
     # quantity disagreement
     m = quantity_disagreement(data_det, index_pairs=index_pairs)
-    m_ci = bootstrap(data_det,
+    m_ci = bootstrap([data_det],
                      metric_function=partial(quantity_disagreement,
                                              index_pairs=index_pairs),
                      **bootstrap_kwargs)
@@ -458,7 +478,7 @@ for key, index_pairs in index_combinations.items():
 
     # allocation disagreement
     m = allocation_disagreement(data_det, index_pairs=index_pairs)
-    m_ci = bootstrap(data_det,
+    m_ci = bootstrap([data_det],
                      metric_function=partial(allocation_disagreement,
                                              index_pairs=index_pairs),
                      **bootstrap_kwargs)
@@ -510,7 +530,7 @@ for key, indices in index_combinations.items():
     
     # ICC (detection)
     m = icc(data_det, indices_A=indices_A, indices_B=indices_B)
-    m_ci = bootstrap(data_det,
+    m_ci = bootstrap([data_det],
                      metric_function=partial(icc,
                                              indices_A=indices_A,
                                              indices_B=indices_B),
@@ -519,7 +539,7 @@ for key, indices in index_combinations.items():
     
     # ICC (volumes)
     m = icc(data_vol, indices_A=indices_A, indices_B=indices_B)
-    m_ci = bootstrap(data_vol,
+    m_ci = bootstrap([data_vol],
                      metric_function=partial(icc,
                                              indices_A=indices_A,
                                              indices_B=indices_B),
@@ -535,28 +555,48 @@ for key, indices in index_combinations.items():
 # 
 ##############################################################################
 
+index_combinations = OrderedDict((
+    ('manual 1',    (subdirectories.index('manual_A1'),
+                     subdirectories.index('manual_A2'))),
+    ('manual 2',    (subdirectories.index('manual_W1'),
+                     subdirectories.index('manual_W2'))),
+    ('corrected 1', (subdirectories.index('correction_A1'),
+                     subdirectories.index('correction_A2'))),
+    ('corrected 2', (subdirectories.index('correction_W1'),
+                     subdirectories.index('correction_W2'))),
+    ('automated',   (subdirectories.index('automatic'),))
+    ))
+    
+    
 diameter_ranges = [(None, None), (None, 10), (10, 20), (20, None)]
-for dn in subdirectories:
-    print("DETECTION: {}".format(dn))
+for key, indices in index_combinations.items():
+    print("DETECTION: {}".format(key))
     
     for limits in diameter_ranges:
-        data_det = scrub_detection_status_with_fp(csv_det_dict,
+        data_det = []
+        for dn_idx in indices:
+            dn = subdirectories[dn_idx]
+            data = scrub_detection_status_with_fp(csv_det_dict,
                                                   csv_fp_dict,
                                                   subdir=dn,
                                                   min_diameter=limits[0],
                                                   max_diameter=limits[1])
+            if len(data):
+                data_det.append(data)
+        
         if len(data_det)==0:
-            print("Warning: no data in size range [{}, {})"
-                  "".format(*limits))
+            print("Warning: no data in size range [{}, {}) for {}."
+                  "".format(*limits, key))
             continue
-        m = recall(data_det)
+            
+        m = np.mean([recall(data) for data in data_det])
         m_ci = bootstrap(data_det,
                          metric_function=recall,
                          **bootstrap_kwargs)
         print("Recall    [{}, {}] = {:.3f} ({:.3f}, {:.3f})"
               "".format(*limits, m, *m_ci))
         
-        m = precision(data_det)
+        m = np.mean([precision(data) for data in data_det])
         m_ci = bootstrap(data_det,
                          metric_function=precision,
                          **bootstrap_kwargs)
@@ -572,27 +612,47 @@ for dn in subdirectories:
 ## 
 ###############################################################################
 
+index_combinations = OrderedDict((
+    ('manual 1',    (subdirectories.index('manual_A1'),
+                     subdirectories.index('manual_A2'))),
+    ('manual 2',    (subdirectories.index('manual_W1'),
+                     subdirectories.index('manual_W2'))),
+    ('corrected 1', (subdirectories.index('correction_A1'),
+                     subdirectories.index('correction_A2'))),
+    ('corrected 2', (subdirectories.index('correction_W1'),
+                     subdirectories.index('correction_W2'))),
+    ('automated',   (subdirectories.index('automatic'),))
+    ))
+    
+    
 diameter_ranges = [(None, None), (None, 10), (10, 20), (20, None)]
 for metric_name in ['dice', 'assd', 'msd']:
     
     print("SEGMENTATION: {}".format(metric_name))
     
-    for dn in subdirectories:
+    for key, indices in index_combinations.items():
         for limits in diameter_ranges:
-            data_seg = scrub_lesion_metric(csv_seg_dict,
+            data_seg = []
+            for dn_idx in indices:
+                dn = subdirectories[dn_idx]
+                data = scrub_lesion_metric(csv_seg_dict,
                                            subdir=dn,
                                            metric_name=metric_name,
                                            min_diameter=limits[0],
                                            max_diameter=limits[1])
+                if len(data):
+                    data_seg.append(data)
+            
             if len(data_seg)==0:
                 print("Warning: no data in size range [{}, {})"
                       "".format(*limits))
                 continue
-            m = np.mean(data_seg)
+                
+            m = np.mean([np.mean(data) for data in data_seg])
             m_ci = bootstrap(data_seg,
                              metric_function=np.mean,
                              **bootstrap_kwargs)
             print("{} [{}, {}] = {:.3f} ({:.3f}, {:.3f})"
-                  "".format(dn, *limits, m, *m_ci))
+                  "".format(key, *limits, m, *m_ci))
         
     print("\n")
