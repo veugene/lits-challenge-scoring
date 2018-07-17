@@ -8,7 +8,7 @@ import numpy as np
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Arithmetic Task")
+    parser = argparse.ArgumentParser(description="Bootstrap statistics")
     parser.add_argument("scores_dir", type=str,
                         help="path to the scores directory")
     parser.add_argument("--alpha", type=float, default=0.05,
@@ -102,13 +102,18 @@ def _kappa(data, idxA, idxB):
     n01 = sum(a0*b1)
     n00 = sum(a0*b0)
     
-    a_quant = abs(n01-n10)/float(n11+n00)
-    b_quant = abs(n10-n01)/float(n11+n00)
-    a_alloc = 2*min(n10, n01)/float(n11+n10+n01+n00)
-    b_alloc = 2*min(n10, n01)/float(n11+n10+n01+n00)
+    p11 = n11/float(n00+n01+n10+n11)
+    p10 = n10/float(n00+n01+n10+n11)
+    p01 = n01/float(n00+n01+n10+n11)
+    p00 = n00/float(n00+n01+n10+n11)
+    
+    a_quant = abs(p01-p10)
+    b_quant = abs(p10-p01)
+    a_alloc = 2*min(p01, p10)
+    b_alloc = 2*min(p10, p01)
     
     quantity_disagreement = (a_quant+b_quant)/2.
-    allocation_disagreemnt = (a_alloc+b_alloc)/2.
+    allocation_disagreement = (a_alloc+b_alloc)/2.
     
     po = (n11+n00)/float(n11+n10+n01+n00)
     pe = ((n11+n10)*(n11+n01)+(n10+n01)*(n10+n00))/float(n11+n10+n01+n00)**2
@@ -119,7 +124,7 @@ def _kappa(data, idxA, idxB):
               'pe': pe,
               'kappa': kappa,
               'quantity_disagreement': quantity_disagreement,
-              'allocation_disagreemnt': allocation_disagreemnt}
+              'allocation_disagreement': allocation_disagreement}
     
     return values
 
@@ -149,7 +154,7 @@ def allocation_disagreement(data, index_pairs):
     alloc_list = []
     for idxA, idxB in index_pairs:
         v = _kappa(data, idxA=idxA, idxB=idxB)
-        alloc_list.append(v['allocation_disagreemnt'])
+        alloc_list.append(v['allocation_disagreement'])
     allocation_disagreement = np.mean(alloc_list)
     return allocation_disagreement
 
