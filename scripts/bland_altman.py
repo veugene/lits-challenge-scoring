@@ -14,8 +14,16 @@ import scipy.stats
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Plot bland altman")
-    parser.add_argument("scores_dir", type=str,
+    parser.add_argument("--scores_dir", type=str,
                         help="path to the scores directory")
+    parser.add_argument("--x", type=float, default=10,
+                        help="horizontal size of each figure")
+    parser.add_argument("--y", type=float, default=5,
+                        help="vertical size of each figure")
+    parser.add_argument("--fontsize", type=int, default=14,
+                        help="font size for labels and title")
+    parser.add_argument("--save_to", type=str, default='.',
+                        help="directory to save figures to")
     args = parser.parse_args()
     return args
 
@@ -153,6 +161,95 @@ def points_bland_altman(data, indices_A, indices_B):
     return output
 
 
+def linewidth_from_data_units(linewidth, axis, reference='y'):
+    """
+    Convert a linewidth in data units to linewidth in points.
+    
+    https://stackoverflow.com/questions/19394505/
+            matplotlib-expand-the-line-with-specified-width-in-data-unit
+
+    Parameters
+    ----------
+    linewidth: float
+        Linewidth in data units of the respective reference-axis
+    axis: matplotlib axis
+        The axis which is used to extract the relevant transformation
+        data (data limits and size must not change afterwards)
+    reference: string
+        The axis that is taken as a reference for the data width.
+        Possible values: 'x' and 'y'. Defaults to 'y'.
+
+    Returns
+    -------
+    linewidth: float
+        Linewidth in points
+    """
+    fig = axis.get_figure()
+    if reference == 'x':
+        length = fig.bbox_inches.width * axis.get_position().width
+        value_range = np.diff(axis.get_xlim())
+    elif reference == 'y':
+        length = fig.bbox_inches.height * axis.get_position().height
+        value_range = np.diff(axis.get_ylim())
+    # Convert length to points
+    length *= 72
+    # Scale linewidth to value range
+    return linewidth * (length / value_range)
+
+
+def plot_bland_altman(mean, diff, limits, limits_conf, bias, bias_conf,
+                      xlim, ylim, title, figsize, fontsize, save_to):
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=figsize)
+    ax.set_facecolor('0.9')
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.axhline(bias, color='blue', alpha=0.2,
+               linewidth=linewidth_from_data_units(bias_conf, ax))
+    ax.axhline(limits[0], color='red', alpha=0.2,
+               linewidth=linewidth_from_data_units(limits_conf, ax))
+    ax.axhline(limits[1], color='red', alpha=0.2,
+               linewidth=linewidth_from_data_units(limits_conf, ax))
+    ax.axhline(bias, color='blue')
+    ax.annotate("mean diff:\n{:.2f} ({:.2f}, {:.2f})"
+                "".format(bias,
+                          bias-bias_conf/2,
+                          bias+bias_conf/2),
+                xy=(0.99, 0.5+bias/float(ylim[1]-ylim[0])),
+                horizontalalignment='right',
+                verticalalignment='center',
+                fontsize=fontsize,
+                xycoords='axes fraction')
+    ax.axhline(limits[0], color='red', linestyle='dashed')
+    ax.annotate("-SD 1.96: {:.2f} ({:.2f}, {:.2f})"
+                "".format(limits[0],
+                          limits[0]-limits_conf/2,
+                          limits[0]+limits_conf/2),
+                xy=(0.99, 0.5+limits[0]/float(ylim[1]-ylim[0])),
+                horizontalalignment='right',
+                verticalalignment='top',
+                fontsize=fontsize,
+                xycoords='axes fraction')
+    ax.axhline(limits[1], color='red', linestyle='dashed')
+    ax.annotate("+SD 1.96: {:.2f} ({:.2f}, {:.2f})"
+                "".format(limits[1],
+                          limits[1]-limits_conf/2,
+                          limits[1]+limits_conf/2),
+                xy=(0.99, 0.5+limits[1]/float(ylim[1]-ylim[0])),
+                horizontalalignment='right',
+                verticalalignment='bottom',
+                fontsize=fontsize,
+                xycoords='axes fraction')
+    plt.semilogx(mean, diff, color='black', marker='o', linestyle='None',
+                 markerfacecolor='none', figure=fig)
+    plt.ylabel("Relative volume (times mean volume)", fontsize=fontsize)
+    plt.xlabel("Mean volume (mL)", fontsize=fontsize)
+    for item in ax.get_xticklabels()+ax.get_yticklabels():
+        item.set_fontsize(fontsize)
+    plt.title(title, fontsize=fontsize)
+    plt.show(fig)
+    plt.savefig(save_to)
+
+
 ##############################################################################
 # 
 #  Setup.
@@ -161,6 +258,8 @@ def points_bland_altman(data, indices_A, indices_B):
 args = parse_args()
 csv_seg_dict = load_data(args.scores_dir)
 data_vol = scrub_predicted_volumes(csv_seg_dict)
+if not os.path.exists(args.save_to):
+    os.makedirs(args.save_to)
 
 
 ##############################################################################
@@ -169,45 +268,45 @@ data_vol = scrub_predicted_volumes(csv_seg_dict)
 # 
 ##############################################################################
 index_combinations = OrderedDict((
-    ('inter-rater, manual',
+    ('Inter-rater, manual',
          [(subdirectories.index('manual_A1'),
            subdirectories.index('manual_A2')),
           (subdirectories.index('manual_W1'),
            subdirectories.index('manual_W2'))]
     ),
-    ('inter-rater, corrected',
+    ('Inter-rater, corrected',
         [(subdirectories.index('correction_A1'),
           subdirectories.index('correction_A2')),
          (subdirectories.index('correction_W1'),
           subdirectories.index('correction_W2'))]
     ),
-    ('intra-rater, manual',
+    ('Intra-rater, manual',
         [(subdirectories.index('manual_A1'),
           subdirectories.index('manual_W1')),
          (subdirectories.index('manual_A2'),
           subdirectories.index('manual_W2'))]
     ),
-    ('intra-rater, corrected',
+    ('Intra-rater, corrected',
         [(subdirectories.index('correction_A1'),
           subdirectories.index('correction_W1')),
          (subdirectories.index('correction_A2'),
           subdirectories.index('correction_W2'))]
     ),
-    ('inter-method, manual vs automatic',
+    ('Inter-method, manual vs automatic',
          [(subdirectories.index('manual_A1'),
            subdirectories.index('manual_A2'),
            subdirectories.index('manual_W1'),
            subdirectories.index('manual_W2')),
           (subdirectories.index('automatic'),)]
     ),
-    ('inter-method, corrected vs automatic',
+    ('Inter-method, corrected vs automatic',
          [(subdirectories.index('correction_A1'),
            subdirectories.index('correction_A2'),
            subdirectories.index('correction_W1'),
            subdirectories.index('correction_W2')),
           (subdirectories.index('automatic'),)]
     ),
-    ('inter-method, manual vs corrected',
+    ('Inter-method, manual vs corrected',
          [(subdirectories.index('manual_A1'),
            subdirectories.index('manual_A2'),
            subdirectories.index('manual_W1'),
@@ -220,7 +319,7 @@ index_combinations = OrderedDict((
     ))
 
 
-for key, indices in index_combinations.items():
+for i, (key, indices) in enumerate(index_combinations.items()):
     print("\n{}".format(key))
     indices_A, indices_B = indices
     out = points_bland_altman(data_vol, indices_A, indices_B)
@@ -228,3 +327,11 @@ for key, indices in index_combinations.items():
     print("limits_conf: {}".format(out['limits_conf']))
     print("bias: {}".format(out['bias']))
     print("bias_conf: {}".format(out['bias_conf']))
+    plot_bland_altman(**out,
+                      xlim=[0.01, 1000],
+                      ylim=[-2, 2],
+                      figsize=(args.x, args.y),
+                      title=key,
+                      fontsize=args.fontsize,
+                      save_to=os.path.join(args.save_to,
+                                           "fig{}.png".format(i)))
