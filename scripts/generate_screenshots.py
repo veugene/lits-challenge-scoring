@@ -59,8 +59,8 @@ def save_slices_with_lesions(volume, labels, path, base, alpha=0.3):
         l_slice_rgb[:,:,2][l_slice==3] = 255    # Blue, oversegmentation
         l_slice_rgb[:,:,3][l_slice!=0] = alpha*255
         l_zero_rgb = np.zeros(l_slice_rgb.shape, dtype=np.uint8)
-        l_im = Image.fromarray(np.hstack([l_slice_rgb,
-                                          l_zero_rgb]), mode='RGBA')
+        l_im = Image.fromarray(np.hstack([l_zero_rgb,
+                                          l_slice_rgb]), mode='RGBA')
         
         o_im = Image.alpha_composite(v_im, l_im)
         o_im.save(os.path.join(path, "{}__{}.png".format(base, idx)))
