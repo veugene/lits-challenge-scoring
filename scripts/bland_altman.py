@@ -198,7 +198,7 @@ def linewidth_from_data_units(linewidth, axis, reference='y'):
 
 
 def plot_bland_altman(mean, diff, limits, limits_conf, bias, bias_conf,
-                      xlim, ylim, title, figsize, fontsize, save_to):
+                      xlim, ylim, ylabel, title, figsize, fontsize, save_to):
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=figsize)
     ax.set_facecolor('0.9')
     ax.set_xlim(xlim)
@@ -210,38 +210,31 @@ def plot_bland_altman(mean, diff, limits, limits_conf, bias, bias_conf,
     ax.axhline(limits[1], color='red', alpha=0.2,
                linewidth=linewidth_from_data_units(limits_conf, ax))
     ax.axhline(bias, color='blue')
-    ax.annotate("mean diff:\n{:.2f} ({:.2f}, {:.2f})"
-                "".format(bias,
-                          bias-bias_conf/2,
-                          bias+bias_conf/2),
+    ax.annotate("Mean\n{:.2f}".format(bias),
                 xy=(0.99, 0.5+bias/float(ylim[1]-ylim[0])),
                 horizontalalignment='right',
                 verticalalignment='center',
                 fontsize=fontsize,
                 xycoords='axes fraction')
     ax.axhline(limits[0], color='red', linestyle='dashed')
-    ax.annotate("-SD 1.96: {:.2f} ({:.2f}, {:.2f})"
-                "".format(limits[0],
-                          limits[0]-limits_conf/2,
-                          limits[0]+limits_conf/2),
+    ax.annotate("-1.96 SD\n{:.2f}".format(limits[0]),
                 xy=(0.99, 0.5+limits[0]/float(ylim[1]-ylim[0])),
                 horizontalalignment='right',
-                verticalalignment='top',
+                verticalalignment='center',
                 fontsize=fontsize,
                 xycoords='axes fraction')
     ax.axhline(limits[1], color='red', linestyle='dashed')
-    ax.annotate("+SD 1.96: {:.2f} ({:.2f}, {:.2f})"
-                "".format(limits[1],
-                          limits[1]-limits_conf/2,
-                          limits[1]+limits_conf/2),
+    ax.annotate("+1.96 SD\n{:.2f}".format(limits[1]),
                 xy=(0.99, 0.5+limits[1]/float(ylim[1]-ylim[0])),
                 horizontalalignment='right',
-                verticalalignment='bottom',
+                verticalalignment='center',
                 fontsize=fontsize,
                 xycoords='axes fraction')
     plt.semilogx(mean, diff, color='black', marker='o', linestyle='None',
                  markerfacecolor='none', figure=fig)
-    plt.ylabel("Relative volume (times mean volume)", fontsize=fontsize)
+    plt.ylabel("Proportional volume:\n{}".format(ylabel),
+               fontsize=fontsize,
+               multialignment='center')
     plt.xlabel("Mean volume (mL)", fontsize=fontsize)
     for item in ax.get_xticklabels()+ax.get_yticklabels():
         item.set_fontsize(fontsize)
@@ -267,6 +260,15 @@ if not os.path.exists(args.save_to):
 #  Evaluate Bland Altman.
 # 
 ##############################################################################
+y_axis_labels = OrderedDict((
+    ('Inter-rater, manual', 'rater 1 vs 2 (both replicates)'),
+    ('Inter-rater, corrected', 'rater 1 vs 2 (both replicates)'),
+    ('Intra-rater, manual', 'replicate 1 vs 2 (both raters)'),
+    ('Intra-rater, corrected', 'replicate 1 vs 2 (both raters)'),
+    ('Inter-method, automated vs manual', 'automated vs manual'),
+    ('Inter-method, automated vs corrected', 'automated vs corrected'),
+    ('Inter-method, corrected vs manual', ' corrected vs manual')
+    ))
 index_combinations = OrderedDict((
     ('Inter-rater, manual',
          [(subdirectories.index('manual_A1'),
@@ -292,29 +294,29 @@ index_combinations = OrderedDict((
          (subdirectories.index('correction_A2'),
           subdirectories.index('correction_W2'))]
     ),
-    ('Inter-method, manual vs automatic',
-         [(subdirectories.index('manual_A1'),
+    ('Inter-method, automated vs manual',
+         [(subdirectories.index('automatic'),),
+          (subdirectories.index('manual_A1'),
            subdirectories.index('manual_A2'),
            subdirectories.index('manual_W1'),
-           subdirectories.index('manual_W2')),
-          (subdirectories.index('automatic'),)]
+           subdirectories.index('manual_W2'))]
     ),
-    ('Inter-method, corrected vs automatic',
-         [(subdirectories.index('correction_A1'),
-           subdirectories.index('correction_A2'),
-           subdirectories.index('correction_W1'),
-           subdirectories.index('correction_W2')),
-          (subdirectories.index('automatic'),)]
-    ),
-    ('Inter-method, manual vs corrected',
-         [(subdirectories.index('manual_A1'),
-           subdirectories.index('manual_A2'),
-           subdirectories.index('manual_W1'),
-           subdirectories.index('manual_W2')),
+    ('Inter-method, automated vs corrected',
+         [(subdirectories.index('automatic'),),
           (subdirectories.index('correction_A1'),
            subdirectories.index('correction_A2'),
            subdirectories.index('correction_W1'),
            subdirectories.index('correction_W2'))]
+    ),
+    ('Inter-method, corrected vs manual',
+         [(subdirectories.index('correction_A1'),
+           subdirectories.index('correction_A2'),
+           subdirectories.index('correction_W1'),
+           subdirectories.index('correction_W2')),
+          (subdirectories.index('manual_A1'),
+           subdirectories.index('manual_A2'),
+           subdirectories.index('manual_W1'),
+           subdirectories.index('manual_W2'))]
     )
     ))
 
@@ -330,6 +332,7 @@ for i, (key, indices) in enumerate(index_combinations.items()):
     plot_bland_altman(**out,
                       xlim=[0.01, 1000],
                       ylim=[-2, 2],
+                      ylabel=y_axis_labels[key],
                       figsize=(args.x, args.y),
                       title=key,
                       fontsize=args.fontsize,
