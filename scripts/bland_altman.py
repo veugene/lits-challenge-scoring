@@ -232,10 +232,10 @@ def plot_bland_altman(mean, diff, limits, limits_conf, bias, bias_conf,
                 xycoords='axes fraction')
     plt.semilogx(mean, diff, color='black', marker='o', linestyle='None',
                  markerfacecolor='none', figure=fig)
-    plt.ylabel("Proportional volume:\n{}".format(ylabel),
-               fontsize=fontsize,
+    plt.ylabel(ylabel,
+               fontsize=fontsize*1.4,
                multialignment='center')
-    plt.xlabel("Mean volume (mL)", fontsize=fontsize)
+    plt.xlabel("$\mathtt{Mean\ volume\ (mL)}$", fontsize=fontsize)
     for item in ax.get_xticklabels()+ax.get_yticklabels():
         item.set_fontsize(fontsize)
     plt.title(title, fontsize=fontsize)
@@ -261,62 +261,76 @@ if not os.path.exists(args.save_to):
 # 
 ##############################################################################
 y_axis_labels = OrderedDict((
-    ('Inter-rater, manual', 'rater 1 vs 2 (both replicates)'),
-    ('Inter-rater, corrected', 'rater 1 vs 2 (both replicates)'),
-    ('Intra-rater, manual', 'replicate 1 vs 2 (both raters)'),
-    ('Intra-rater, corrected', 'replicate 1 vs 2 (both raters)'),
-    ('Inter-method, automated vs manual', 'automated vs manual'),
-    ('Inter-method, automated vs corrected', 'automated vs corrected'),
-    ('Inter-method, corrected vs manual', ' corrected vs manual')
+    ('Inter-reader, manual (both replicates)',
+     r'$\frac{\mathtt{reader\ 1\ -\ reader\ 2}}'
+      '{\mathtt{mean(reader\ 1\ -\ reader\ 2)}}$'),
+    ('Inter-reader, corrected (both replicates)',
+     r'$\frac{\mathtt{reader\ 1\ -\ reader\ 2}}'
+      '{\mathtt{mean(reader\ 1\ -\ reader\ 2)}}$'),
+    ('Intra-reader, manual (both readers)',
+     r'$\frac{\mathtt{replicate\ 1\ -\ replicate\ 2}}'
+      '{\mathtt{mean(replicate\ 1\ -\ replicate\ 2)}}$'),
+    ('Intra-reader, corrected (both readers)',
+     r'$\frac{\mathtt{replicate\ 1\ -\ replicate\ 2}}'
+      '{\mathtt{mean(replicate\ 1\ -\ replicate\ 2)}}$'),
+    ('Inter-method, manual vs automated',
+     r'$\frac{\mathtt{all\ manual -\ all\ automated}}'
+      '{\mathtt{mean(all\ manual -\ all\ automated)}}$'),
+    ('Inter-method, corrected vs automated',
+     r'$\frac{\mathtt{all\ corrected -\ all\ automated}}'
+      '{\mathtt{mean(all\ corrected -\ all\ automated)}}$'),
+    ('Inter-method, manual vs corrected',
+     r'$\frac{\mathtt{all\ manual -\ all\ corrected}}'
+      '{\mathtt{mean(all\ manual -\ all\ corrected)}}$'),
     ))
 index_combinations = OrderedDict((
-    ('Inter-rater, manual',
+    ('Inter-reader, manual (both replicates)',
          [(subdirectories.index('manual_A1'),
            subdirectories.index('manual_A2')),
           (subdirectories.index('manual_W1'),
            subdirectories.index('manual_W2'))]
     ),
-    ('Inter-rater, corrected',
+    ('Inter-reader, corrected (both replicates)',
         [(subdirectories.index('correction_A1'),
           subdirectories.index('correction_A2')),
          (subdirectories.index('correction_W1'),
           subdirectories.index('correction_W2'))]
     ),
-    ('Intra-rater, manual',
+    ('Intra-reader, manual (both readers)',
         [(subdirectories.index('manual_A1'),
           subdirectories.index('manual_W1')),
          (subdirectories.index('manual_A2'),
           subdirectories.index('manual_W2'))]
     ),
-    ('Intra-rater, corrected',
+    ('Intra-reader, corrected (both readers)',
         [(subdirectories.index('correction_A1'),
           subdirectories.index('correction_W1')),
          (subdirectories.index('correction_A2'),
           subdirectories.index('correction_W2'))]
     ),
-    ('Inter-method, automated vs manual',
-         [(subdirectories.index('automatic'),),
-          (subdirectories.index('manual_A1'),
+    ('Inter-method, manual vs automated',
+         [(subdirectories.index('manual_A1'),
            subdirectories.index('manual_A2'),
            subdirectories.index('manual_W1'),
-           subdirectories.index('manual_W2'))]
+           subdirectories.index('manual_W2')),
+          (subdirectories.index('automatic'),)]
     ),
-    ('Inter-method, automated vs corrected',
-         [(subdirectories.index('automatic'),),
-          (subdirectories.index('correction_A1'),
-           subdirectories.index('correction_A2'),
-           subdirectories.index('correction_W1'),
-           subdirectories.index('correction_W2'))]
-    ),
-    ('Inter-method, corrected vs manual',
+    ('Inter-method, corrected vs automated',
          [(subdirectories.index('correction_A1'),
            subdirectories.index('correction_A2'),
            subdirectories.index('correction_W1'),
            subdirectories.index('correction_W2')),
-          (subdirectories.index('manual_A1'),
+          (subdirectories.index('automatic'),)]
+    ),
+    ('Inter-method, manual vs corrected',
+         [(subdirectories.index('manual_A1'),
            subdirectories.index('manual_A2'),
            subdirectories.index('manual_W1'),
-           subdirectories.index('manual_W2'))]
+           subdirectories.index('manual_W2')),
+          (subdirectories.index('correction_A1'),
+           subdirectories.index('correction_A2'),
+           subdirectories.index('correction_W1'),
+           subdirectories.index('correction_W2'))]
     )
     ))
 
