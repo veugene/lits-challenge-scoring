@@ -157,6 +157,7 @@ def points_bland_altman(data, indices_A, indices_B):
     # Output.
     output = {'mean': mean,
               'diff': diff,
+              'RC': (limits_of_agreement[1]-limits_of_agreement[0])/2.,
               'limits': limits_of_agreement,
               'limits_conf': limits_conf,
               'bias': m_d,
@@ -343,6 +344,7 @@ for i, (key, indices) in enumerate(index_combinations.items()):
     print("\n{}".format(key))
     indices_A, indices_B = indices
     out = points_bland_altman(data_vol, indices_A, indices_B)
+    print("RC: {}".format(out['RC']))
     print("limits: {}".format(out['limits']))
     print("limits_conf: {}".format(out['limits_conf']))
     print("bias: {}".format(out['bias']))
