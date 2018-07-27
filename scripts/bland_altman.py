@@ -352,4 +352,4 @@ for i, (key, indices) in enumerate(index_combinations.items()):
                       title=key,
                       fontsize=args.fontsize,
                       save_to=os.path.join(args.save_to,
-                                           "fig{}.png".format(i)))
+                                           "fig{}.pdf".format(i)))
