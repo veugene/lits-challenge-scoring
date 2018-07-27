@@ -147,6 +147,7 @@ def points_bland_altman(data, indices_A, indices_B):
                    +((1-1/hmean_A)**2)*(s_A2**2)/max(float(n_A-n), 1)
                    +((1-1/hmean_B)**2)*(s_B2**2)/max(float(n_B-n), 1))
     conf_variance = (s_d**2)/float(n)+(1.96**2)/(2.*std_corrected2)*margin_conf
+    limits_conf = 1.96*np.sqrt(conf_variance)
     
     # 95% confidence interval of the bias.
     bias_conf = scipy.stats.t.ppf(0.975, n-1)*np.sqrt(std_corrected2/float(n))
@@ -155,7 +156,7 @@ def points_bland_altman(data, indices_A, indices_B):
     output = {'mean': mean,
               'diff': diff,
               'limits': limits_of_agreement,
-              'limits_conf': conf_variance,
+              'limits_conf': limits_conf,
               'bias': m_d,
               'bias_conf': bias_conf}
     return output
