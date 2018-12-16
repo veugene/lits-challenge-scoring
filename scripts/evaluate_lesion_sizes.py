@@ -82,6 +82,7 @@ if __name__=='__main__':
                                           radius=1,
                                           flat_struct=True)
         mask_integer, n = label_connected_components(vol_arr_dilated)
+        mask_integer[vol_arr!=2] = 0   # Trim the dilation away.
         count.append(n)
         case_volumes = []
         case_lengths = []
