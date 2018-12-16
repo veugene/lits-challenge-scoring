@@ -75,6 +75,8 @@ if __name__=='__main__':
             raise ValueError("{} does not exist".format(path))
 
     for fn in sorted(os.listdir(args.dir_ref)):
+        if 'CAN_91_' not in fn:
+            continue
         base = fn.rsplit('.')[0]
         print(base)
         
