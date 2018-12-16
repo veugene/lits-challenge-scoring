@@ -269,24 +269,24 @@ y_axis_labels = OrderedDict((
     ('Inter-reader, manual (both replicates)',
      r'$\frac{\mathtt{reader\ 1\ -\ reader\ 2}}'
       '{\mathtt{mean(reader\ 1\ -\ reader\ 2)}}$'),
-    ('Inter-reader, corrected (both replicates)',
+    ('Inter-reader, user-corrected (both replicates)',
      r'$\frac{\mathtt{reader\ 1\ -\ reader\ 2}}'
       '{\mathtt{mean(reader\ 1\ -\ reader\ 2)}}$'),
     ('Intra-reader, manual (both readers)',
      r'$\frac{\mathtt{replicate\ 1\ -\ replicate\ 2}}'
       '{\mathtt{mean(replicate\ 1\ -\ replicate\ 2)}}$'),
-    ('Intra-reader, corrected (both readers)',
+    ('Intra-reader, user-corrected (both readers)',
      r'$\frac{\mathtt{replicate\ 1\ -\ replicate\ 2}}'
       '{\mathtt{mean(replicate\ 1\ -\ replicate\ 2)}}$'),
     ('Inter-method, manual vs automated',
      r'$\frac{\mathtt{all\ manual -\ all\ automated}}'
       '{\mathtt{mean(all\ manual -\ all\ automated)}}$'),
-    ('Inter-method, corrected vs automated',
-     r'$\frac{\mathtt{all\ corrected -\ all\ automated}}'
-      '{\mathtt{mean(all\ corrected -\ all\ automated)}}$'),
-    ('Inter-method, manual vs corrected',
-     r'$\frac{\mathtt{all\ manual -\ all\ corrected}}'
-      '{\mathtt{mean(all\ manual -\ all\ corrected)}}$'),
+    ('Inter-method, user-corrected vs automated',
+     r'$\frac{\mathtt{all\ user-corrected -\ all\ automated}}'
+      '{\mathtt{mean(all\ user-corrected -\ all\ automated)}}$'),
+    ('Inter-method, manual vs user-corrected',
+     r'$\frac{\mathtt{all\ manual -\ all\ user-corrected}}'
+      '{\mathtt{mean(all\ manual -\ all\ user-corrected)}}$'),
     ))
 index_combinations = OrderedDict((
     ('Inter-reader, manual (both replicates)',
@@ -295,7 +295,7 @@ index_combinations = OrderedDict((
           (subdirectories.index('manual_W1'),
            subdirectories.index('manual_W2'))]
     ),
-    ('Inter-reader, corrected (both replicates)',
+    ('Inter-reader, user-corrected (both replicates)',
         [(subdirectories.index('correction_A1'),
           subdirectories.index('correction_A2')),
          (subdirectories.index('correction_W1'),
@@ -307,7 +307,7 @@ index_combinations = OrderedDict((
          (subdirectories.index('manual_A2'),
           subdirectories.index('manual_W2'))]
     ),
-    ('Intra-reader, corrected (both readers)',
+    ('Intra-reader, user-corrected (both readers)',
         [(subdirectories.index('correction_A1'),
           subdirectories.index('correction_W1')),
          (subdirectories.index('correction_A2'),
@@ -320,14 +320,14 @@ index_combinations = OrderedDict((
            subdirectories.index('manual_W2')),
           (subdirectories.index('automatic'),)]
     ),
-    ('Inter-method, corrected vs automated',
+    ('Inter-method, user-corrected vs automated',
          [(subdirectories.index('correction_A1'),
            subdirectories.index('correction_A2'),
            subdirectories.index('correction_W1'),
            subdirectories.index('correction_W2')),
           (subdirectories.index('automatic'),)]
     ),
-    ('Inter-method, manual vs corrected',
+    ('Inter-method, manual vs user-corrected',
          [(subdirectories.index('manual_A1'),
            subdirectories.index('manual_A2'),
            subdirectories.index('manual_W1'),
